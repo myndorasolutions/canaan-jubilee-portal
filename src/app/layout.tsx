@@ -18,6 +18,11 @@ export const metadata: Metadata = {
     "Annual household ticket booking for Canaan Ministries (a.k.a. Champions' Church).",
   applicationName: "Canaan Jubilee",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon-192.png",
+    shortcut: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

@@ -1,0 +1,3 @@
+#!/bin/sh
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--use-system-ca"
+npm run ship

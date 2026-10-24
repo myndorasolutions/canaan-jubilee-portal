@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ship": "npm run build && set NODE_OPTIONS=--use-system-ca&& npx wrangler pages deploy out --project-name=canaan-jubilee-portal --branch=main",
+    "prepare": "node scripts/install-git-hooks.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
