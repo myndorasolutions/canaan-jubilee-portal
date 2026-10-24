@@ -1,69 +1,78 @@
-import Image from "next/image";
+"use client";
+
+import dynamic from "next/dynamic";
+import Footer from "@/components/Footer";
+import Header from "@/components/Header";
+
+const JubileeCatalog = dynamic(() => import("@/components/JubileeCatalog"), {
+  ssr: false,
+  loading: () => (
+    <p className="mx-auto max-w-6xl px-4 py-10 text-lg font-semibold text-navy">
+      Loading Jubilee items…
+    </p>
+  ),
+});
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+    <div className="flex min-h-full flex-1 flex-col">
+      <Header />
+      <main className="flex-1">
+        <section className="bg-white">
+          <div className="mx-auto max-w-6xl px-4 pt-8 sm:pt-10">
+            <p className="text-base font-bold tracking-wide text-champions uppercase">
+              Canaan Ministries
+            </p>
+            <h1 className="mt-2 max-w-4xl text-3xl font-bold leading-tight text-navy sm:text-5xl">
+              Welcome to the Canaan Jubilee Auction Portal
+            </h1>
+            <p className="mt-4 max-w-3xl text-xl leading-relaxed text-navy">
+              Register your household first. Ticket booking stays locked
+              until your details pass the identity check.
+            </p>
+            <p className="mt-4 max-w-3xl rounded-2xl border-4 border-champions bg-white p-5 text-lg font-bold leading-relaxed text-navy">
+              IMPORTANT: The amount displayed beside each item is the Ticket Fee
+              only. Your physical ticket entitles you to purchase the item at the
+              heavily subsidized Jubilee price directly at the physical Point of
+              Sale.
+            </p>
+          </div>
+        </section>
+        <JubileeCatalog />
+        <section className="bg-white">
+          <div className="mx-auto max-w-6xl px-4 py-10 sm:py-14">
+            <ul className="grid gap-4 md:grid-cols-3">
+              <li className="rounded-2xl border-2 border-navy/15 bg-slate-50 p-5">
+                <h2 className="text-xl font-bold text-navy">
+                  Members and guests
+                </h2>
+                <p className="mt-2 text-lg leading-relaxed">
+                  Open to both church members and non-members (guests).
+                </p>
+              </li>
+              <li className="rounded-2xl border-2 border-navy/15 bg-slate-50 p-5">
+                <h2 className="text-xl font-bold text-navy">
+                  One registration per household
+                </h2>
+                <p className="mt-2 text-lg leading-relaxed">
+                  Strict 1-registration-per-household rule. This is verified
+                  with your NIN or ID, a selfie, and your unit leader or a
+                  referee.
+                </p>
+              </li>
+              <li className="rounded-2xl border-2 border-emerald bg-emerald/10 p-5">
+                <h2 className="text-xl font-bold text-navy">
+                  72-hour confirmation window
+                </h2>
+                <p className="mt-2 text-lg leading-relaxed">
+                  After you book, confirm via WhatsApp within 72 hours.
+                </p>
+              </li>
+            </ul>
+          </div>
+        </section>
       </main>
+      <Footer />
     </div>
   );
 }

@@ -1,0 +1,17 @@
+{
+  "name": "Canaan Jubilee Auction Portal",
+  "short_name": "Canaan Jubilee",
+  "description": "Annual household ticket booking for Canaan Ministries (Champions' Church).",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0D254C",
+  "theme_color": "#0D254C",
+  "icons": [
+    {
+      "src": "/canaan-logo.png",
+      "sizes": "3468x3138",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
