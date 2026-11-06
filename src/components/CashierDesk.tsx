@@ -224,20 +224,10 @@ export function CashierDesk({
       {selected ? (
         <article className="mt-6 rounded-2xl border-4 border-navy bg-white p-5">
           <StatusBanner booking={selected} />
-          <div className="mt-6 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-            {selected.selfieDataUrl ? (
-              // Data-URL selfies cannot use next/image.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={selected.selfieDataUrl}
-                alt={`Face photo of ${selected.fullName}`}
-                className="h-64 w-64 rounded-full border-4 border-navy object-cover"
-              />
-            ) : (
-              <div className="flex h-64 w-64 items-center justify-center rounded-full bg-slate-200 text-lg font-bold text-navy">
-                No photo
-              </div>
-            )}
+          <div className="mt-6 flex flex-col items-start gap-4">
+            <p className="text-lg font-semibold leading-relaxed text-navy">
+              Verify the name on the buyer&apos;s WhatsApp matches their booking.
+            </p>
             <div>
               <h3 className="text-3xl font-bold text-navy">{selected.fullName}</h3>
               <p className="mt-1 text-2xl font-bold text-champions">#{selected.referenceCode}</p>

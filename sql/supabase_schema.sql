@@ -49,11 +49,9 @@ create table if not exists public.households (
   reference_code text not null unique,
   full_name text not null,
   whatsapp_number text not null unique,
-  nin_or_voter_id text not null unique,
   category text not null check (category in ('MEMBER', 'GUEST')),
   church_unit_or_referee text,
   home_address text,
-  selfie_url text,
   device_hash text,
   duplicate_flags text[] not null default '{}',
   status text not null default 'PENDING_VERIFICATION'
@@ -220,14 +218,16 @@ drop function if exists public.submit_household_booking(
   text, text, text, text, text, text, text, text, text[], jsonb
 );
 
+drop function if exists public.submit_household_booking(
+  text, text, text, text, text, text, text, text, jsonb, text[]
+);
+
 create or replace function public.submit_household_booking(
   p_full_name text,
   p_whatsapp_number text,
-  p_nin_or_voter_id text,
   p_category text,
   p_church_unit_or_referee text,
   p_home_address text,
-  p_selfie_url text,
   p_device_hash text,
   p_items jsonb,
   p_duplicate_flags text[] default array[]::text[]
@@ -265,14 +265,6 @@ begin
     raise exception 'WHATSAPP:%', v_existing;
   end if;
 
-  if exists (
-    select 1 from public.households
-    where nin_or_voter_id = p_nin_or_voter_id
-      and status <> 'REJECTED'
-  ) then
-    raise exception 'NIN_DUPLICATE';
-  end if;
-
   if p_items is null
     or jsonb_typeof(p_items) <> 'array'
     or jsonb_array_length(p_items) = 0
@@ -302,11 +294,9 @@ begin
     reference_code,
     full_name,
     whatsapp_number,
-    nin_or_voter_id,
     category,
     church_unit_or_referee,
     home_address,
-    selfie_url,
     device_hash,
     duplicate_flags,
     status,
@@ -315,11 +305,9 @@ begin
     v_reference,
     p_full_name,
     p_whatsapp_number,
-    p_nin_or_voter_id,
     p_category,
     p_church_unit_or_referee,
     p_home_address,
-    p_selfie_url,
     p_device_hash,
     coalesce(p_duplicate_flags, array[]::text[]),
     'PENDING_VERIFICATION',
@@ -397,7 +385,7 @@ end;
 $$;
 
 grant execute on function public.submit_household_booking(
-  text, text, text, text, text, text, text, text, jsonb, text[]
+  text, text, text, text, text, text, jsonb, text[]
 ) to anon, authenticated;
 
 create or replace function public.lookup_household_booking(p_query text)
@@ -450,11 +438,9 @@ begin
     'referenceCode', v_row.reference_code,
     'fullName', v_row.full_name,
     'whatsappNumber', v_row.whatsapp_number,
-    'ninOrVoterId', v_row.nin_or_voter_id,
     'category', v_row.category,
     'churchUnitOrReferee', v_row.church_unit_or_referee,
     'homeAddress', v_row.home_address,
-    'selfieDataUrl', v_row.selfie_url,
     'deviceHash', v_row.device_hash,
     'duplicateFlags', coalesce(to_jsonb(v_row.duplicate_flags), '[]'::jsonb),
     'items', v_items,
@@ -479,3 +465,6 @@ end;
 $$;
 
 grant execute on function public.lookup_household_booking(text) to anon, authenticated;
+
+alter table public.households drop column if exists nin_or_voter_id;
+alter table public.households drop column if exists selfie_url;

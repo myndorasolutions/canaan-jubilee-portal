@@ -99,11 +99,9 @@ export type HouseholdBooking = {
   referenceCode: string;
   fullName: string;
   whatsappNumber: string;
-  ninOrVoterId: string;
   category: HouseholdCategory;
   churchUnitOrReferee: string;
   homeAddress: string;
-  selfieDataUrl: string;
   deviceHash: string;
   duplicateFlags: string[];
   items: BookingLine[];
@@ -143,16 +141,14 @@ export const DEFAULT_SETTINGS: SystemSettings = {
 export type HouseholdDraft = {
   fullName: string;
   whatsappNumber: string;
-  ninOrVoterId: string;
   category: HouseholdCategory;
   churchUnitOrReferee: string;
   homeAddress: string;
-  selfieDataUrl: string;
   items: { productId: string; quantity: number }[];
 };
 
 export type BookingProblem = {
-  code: "WHATSAPP" | "NIN" | "DEVICE" | "STOCK" | "FORM";
+  code: "WHATSAPP" | "DEVICE" | "STOCK" | "FORM";
   message: string;
 };
 
@@ -1059,11 +1055,9 @@ type CloudHouseholdRow = {
   reference_code: string;
   full_name: string;
   whatsapp_number: string;
-  nin_or_voter_id: string;
   category: string;
   church_unit_or_referee: string | null;
   home_address: string | null;
-  selfie_url: string | null;
   device_hash: string | null;
   duplicate_flags: string[] | null;
   status: string;
@@ -1087,13 +1081,6 @@ export function normalizeWhatsapp(input: string): string | null {
   else if (digits.startsWith("234") && digits.length === 13) digits = `0${digits.slice(3)}`;
   if (!/^0\d{10}$/.test(digits)) return null;
   return digits;
-}
-
-export function normalizeIdentity(input: string): string | null {
-  const compact = input.replace(/[\s-]/g, "").toUpperCase();
-  if (/^\d{11}$/.test(compact)) return compact;
-  if (/^[A-Z0-9]{8,22}$/.test(compact)) return compact;
-  return null;
 }
 
 export function statusLabel(status: HouseholdStatus) {
@@ -1221,12 +1208,10 @@ function sanitizeHousehold(value: unknown): HouseholdBooking | null {
     referenceCode: row.referenceCode,
     fullName: row.fullName,
     whatsappNumber: row.whatsappNumber,
-    ninOrVoterId: typeof row.ninOrVoterId === "string" ? row.ninOrVoterId : "",
     category,
     churchUnitOrReferee:
       typeof row.churchUnitOrReferee === "string" ? row.churchUnitOrReferee : "",
     homeAddress: typeof row.homeAddress === "string" ? row.homeAddress : "",
-    selfieDataUrl: typeof row.selfieDataUrl === "string" ? row.selfieDataUrl : "",
     deviceHash: typeof row.deviceHash === "string" ? row.deviceHash : "",
     duplicateFlags: Array.isArray(row.duplicateFlags)
       ? row.duplicateFlags.filter((flag): flag is string => typeof flag === "string")
@@ -1292,11 +1277,9 @@ function rowToHousehold(row: CloudHouseholdRow): HouseholdBooking {
     referenceCode: row.reference_code,
     fullName: row.full_name,
     whatsappNumber: row.whatsapp_number,
-    ninOrVoterId: row.nin_or_voter_id,
     category: row.category === "GUEST" ? "GUEST" : "MEMBER",
     churchUnitOrReferee: row.church_unit_or_referee ?? "",
     homeAddress: row.home_address ?? "",
-    selfieDataUrl: row.selfie_url ?? "",
     deviceHash: row.device_hash ?? "",
     duplicateFlags: row.duplicate_flags ?? [],
     items,
@@ -1321,11 +1304,9 @@ function rowToHousehold(row: CloudHouseholdRow): HouseholdBooking {
     referenceCode: row.reference_code,
     fullName: row.full_name,
     whatsappNumber: row.whatsapp_number,
-    ninOrVoterId: row.nin_or_voter_id,
     category: "MEMBER",
     churchUnitOrReferee: "",
     homeAddress: "",
-    selfieDataUrl: "",
     deviceHash: "",
     duplicateFlags: [],
     items: [],
@@ -1350,7 +1331,7 @@ async function readCloudHouseholds() {
   const { data, error } = await db
     .from("households")
     .select(
-      "id, reference_code, full_name, whatsapp_number, nin_or_voter_id, category, church_unit_or_referee, home_address, selfie_url, device_hash, duplicate_flags, status, created_at, expires_at, whatsapp_initiated, verification_hash, pickup_batch, rejection_reason, admin_note, paid_at, payment_method, issued_by, booking_items(product_id, quantity, ticket_unit_price, products(name))",
+      "id, reference_code, full_name, whatsapp_number, category, church_unit_or_referee, home_address, device_hash, duplicate_flags, status, created_at, expires_at, whatsapp_initiated, verification_hash, pickup_batch, rejection_reason, admin_note, paid_at, payment_method, issued_by, booking_items(product_id, quantity, ticket_unit_price, products(name))",
     )
     .order("created_at", { ascending: false });
   if (error || !data) return readHouseholds();
@@ -1885,11 +1866,9 @@ export function groupHouseholds(
 export type VerifiedProfile = {
   fullName: string;
   whatsappNumber: string;
-  ninOrVoterId: string;
   category: HouseholdCategory;
   churchUnitOrReferee: string;
   homeAddress: string;
-  selfieDataUrl: string;
 };
 
 function validateProfile(
@@ -1910,16 +1889,6 @@ function validateProfile(
       error: problem(
         "FORM",
         "Enter an active WhatsApp number with 11 digits, such as 08031234567.",
-      ),
-    };
-  }
-  const ninOrVoterId = normalizeIdentity(draft.ninOrVoterId);
-  if (!ninOrVoterId) {
-    return {
-      ok: false,
-      error: problem(
-        "FORM",
-        "Enter an 11-digit NIN, or the number on the Voter's Card.",
       ),
     };
   }
@@ -1945,33 +1914,25 @@ function validateProfile(
       ),
     };
   }
-  if (!draft.selfieDataUrl.startsWith("data:image/")) {
-    return {
-      ok: false,
-      error: problem("FORM", "Take or upload a clear photo of the head of household."),
-    };
-  }
   return {
     ok: true,
     profile: {
       fullName,
       whatsappNumber,
-      ninOrVoterId,
       category: draft.category,
       churchUnitOrReferee,
       homeAddress,
-      selfieDataUrl: draft.selfieDataUrl,
     },
   };
 }
 
-function existingTicketBooking(phone: string, nin: string) {
+function existingTicketBooking(phone: string) {
   return (
     readHouseholds().find(
       (booking) =>
         blocksAnotherRegistration(booking) &&
         booking.items.length > 0 &&
-        (booking.whatsappNumber === phone || booking.ninOrVoterId === nin),
+        booking.whatsappNumber === phone,
     ) ?? null
   );
 }
@@ -1988,20 +1949,14 @@ export function verifyHouseholdGate(draft: Omit<HouseholdDraft, "items">):
       error: problem("FORM", "Registration is not open yet. Please check back."),
     };
   }
-  const existing = existingTicketBooking(
-    checked.profile.whatsappNumber,
-    checked.profile.ninOrVoterId,
-  );
+  const existing = existingTicketBooking(checked.profile.whatsappNumber);
   if (existing) {
-    const samePhone = existing.whatsappNumber === checked.profile.whatsappNumber;
     return {
       ok: false,
       existing,
       error: problem(
-        samePhone ? "WHATSAPP" : "NIN",
-        samePhone
-          ? `This WhatsApp number has already been registered for a household (Ref: #${existing.referenceCode}). Only one registration is permitted per household.`
-          : "This NIN / Voter's Card number has already been used for another registration.",
+        "WHATSAPP",
+        `This WhatsApp number has already been registered for a household (Ref: #${existing.referenceCode}). Only one registration is permitted per household.`,
       ),
     };
   }
@@ -2018,7 +1973,6 @@ export async function submitHouseholdBooking(
   const {
     fullName,
     whatsappNumber,
-    ninOrVoterId,
     churchUnitOrReferee,
     homeAddress,
   } = checked.profile;
@@ -2052,20 +2006,6 @@ export async function submitHouseholdBooking(
       ),
     };
   }
-  const ninHit = households.find(
-    (booking) =>
-      blocksAnotherRegistration(booking) && booking.ninOrVoterId === ninOrVoterId,
-  );
-  if (ninHit) {
-    return {
-      ok: false,
-      error: problem(
-        "NIN",
-        "This NIN / Voter's Card number has already been used for another registration.",
-      ),
-    };
-  }
-
   const deviceHash = await getDeviceHash();
   const storedRef = window.localStorage.getItem(DEVICE_BOOKED_KEY);
   if (
@@ -2163,11 +2103,9 @@ export async function submitHouseholdBooking(
     referenceCode: makeReference(new Set(households.map((entry) => entry.referenceCode))),
     fullName,
     whatsappNumber,
-    ninOrVoterId,
     category: draft.category,
     churchUnitOrReferee,
     homeAddress,
-    selfieDataUrl: draft.selfieDataUrl,
     deviceHash,
     duplicateFlags,
     items: lines,
@@ -2244,11 +2182,9 @@ async function persistCloudBooking(
   const { data, error } = await db.rpc("submit_household_booking", {
     p_full_name: booking.fullName,
     p_whatsapp_number: booking.whatsappNumber,
-    p_nin_or_voter_id: booking.ninOrVoterId,
     p_category: booking.category,
     p_church_unit_or_referee: booking.churchUnitOrReferee,
     p_home_address: booking.homeAddress,
-    p_selfie_url: booking.selfieDataUrl,
     p_device_hash: booking.deviceHash,
     p_duplicate_flags: booking.duplicateFlags,
     p_items: booking.items.map((line) => ({
@@ -2265,15 +2201,6 @@ async function persistCloudBooking(
         error: problem(
           "WHATSAPP",
           `This WhatsApp number has already been registered for a household (Ref: #${whatsapp[1]}). Only one registration is permitted per household.`,
-        ),
-      };
-    }
-    if (text.includes("NIN_DUPLICATE")) {
-      return {
-        ok: false,
-        error: problem(
-          "NIN",
-          "This NIN / Voter's Card number has already been used for another registration.",
         ),
       };
     }

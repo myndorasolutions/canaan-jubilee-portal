@@ -1,11 +1,8 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element -- selfies are data URLs, which next/image cannot render */
-
 import { FormEvent, useState, type ReactNode } from "react";
 import { BookingSlip } from "@/components/BookingSlip";
 import { ItemVisual } from "@/components/ItemVisual";
-import { SelfieCapture } from "@/components/SelfieCapture";
 import {
   formatNaira,
   markWhatsappInitiated,
@@ -64,13 +61,11 @@ function OpenCatalog({
   const [category, setCategory] = useState<HouseholdCategory>("MEMBER");
   const [fullName, setFullName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
-  const [nin, setNin] = useState("");
   const [address, setAddress] = useState("");
   const [unit, setUnit] = useState("");
   const [leader, setLeader] = useState("");
   const [refereeName, setRefereeName] = useState("");
   const [refereePhone, setRefereePhone] = useState("");
-  const [selfie, setSelfie] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [deviceMessage, setDeviceMessage] = useState<string | null>(null);
   const [elderly, setElderly] = useState(false);
@@ -110,11 +105,9 @@ function OpenCatalog({
     const result = verifyHouseholdGate({
       fullName,
       whatsappNumber: whatsapp,
-      ninOrVoterId: nin,
       category,
       churchUnitOrReferee: anchorText(),
       homeAddress: address,
-      selfieDataUrl: selfie,
     });
     if (!result.ok) {
       if (result.existing && result.existing.items.length > 0) {
@@ -258,16 +251,6 @@ function OpenCatalog({
                 className={inputClass}
               />
             </Field>
-            <Field label="11-digit NIN or Voter's Card (VIN)">
-              <input
-                required
-                value={nin}
-                onChange={(event) => setNin(event.target.value)}
-                autoComplete="off"
-                placeholder="11 digits, or your voter's card number"
-                className={inputClass}
-              />
-            </Field>
             <Field label="Residential street address and nearest landmark">
               <textarea
                 required
@@ -322,7 +305,6 @@ function OpenCatalog({
                 </Field>
               </>
             )}
-            <SelfieCapture value={selfie} onChange={setSelfie} />
           </div>
           {error ? (
             <p className="mt-4 rounded-lg bg-slate-100 p-4 text-lg font-semibold" role="alert">
@@ -341,13 +323,6 @@ function OpenCatalog({
       {stage === 2 && profile ? (
         <div className="mt-8">
           <div className="flex flex-col gap-4 rounded-2xl border-4 border-emerald bg-white p-5 sm:flex-row sm:items-center">
-            {profile.selfieDataUrl ? (
-              <img
-                src={profile.selfieDataUrl}
-                alt={`Face photo of ${profile.fullName}`}
-                className="h-24 w-24 shrink-0 rounded-full border-4 border-navy object-cover"
-              />
-            ) : null}
             <div className="min-w-0 flex-1">
               <p className="text-xl font-bold leading-snug text-navy">
                 {`Welcome, ${profile.fullName} (${

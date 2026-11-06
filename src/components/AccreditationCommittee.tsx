@@ -1,7 +1,5 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element -- selfies are data URLs, which next/image cannot render */
-
 import { useEffect, useMemo, useState } from "react";
 import {
   accreditHousehold,
@@ -52,7 +50,6 @@ function matchesSearch(booking: HouseholdBooking, query: string) {
     booking.referenceCode,
     booking.fullName,
     booking.whatsappNumber,
-    booking.ninOrVoterId,
     booking.homeAddress,
     booking.churchUnitOrReferee,
   ]
@@ -97,7 +94,6 @@ export function AccreditationCommittee({
   const [filter, setFilter] = useState<ReviewFilter>("all");
   const [groupMode, setGroupMode] = useState<CommitteeGroupMode>("none");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [photo, setPhoto] = useState<{ src: string; name: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState<number | null>(null);
 
@@ -207,7 +203,7 @@ export function AccreditationCommittee({
           id="committee-search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Reference, name, WhatsApp, NIN, address, or leader"
+          placeholder="Reference, name, WhatsApp, address, or leader"
           className="mt-2 min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
         />
         <div className="mt-4 flex flex-wrap gap-2">
@@ -266,7 +262,6 @@ export function AccreditationCommittee({
                   batches={batches}
                   selected={selectedId === booking.id}
                   onSelect={() => setSelectedId(booking.id)}
-                  onPhoto={(src, name) => setPhoto({ src, name })}
                 />
               ))}
             </ul>
@@ -274,33 +269,6 @@ export function AccreditationCommittee({
         ))
       )}
 
-      {photo ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={() => setPhoto(null)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Enlarged face photo of ${photo.name}`}
-            className="rounded-2xl bg-white p-4"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <img
-              src={photo.src}
-              alt={`Face photo of ${photo.name}`}
-              className="max-h-[70vh] max-w-full rounded-2xl object-contain"
-            />
-            <button
-              type="button"
-              onClick={() => setPhoto(null)}
-              className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-lg bg-navy px-5 text-base font-bold text-white"
-            >
-              Close photo
-            </button>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -329,14 +297,12 @@ function VettingCard({
   batches,
   selected,
   onSelect,
-  onPhoto,
 }: {
   booking: HouseholdBooking;
   households: HouseholdBooking[];
   batches: string[];
   selected: boolean;
   onSelect: () => void;
-  onPhoto: (src: string, name: string) => void;
 }) {
   const notes = householdVettingNotes(booking, households);
   const [batch, setBatch] = useState(booking.pickupBatch || batches[0] || "");
@@ -392,24 +358,6 @@ function VettingCard({
       }
     >
       <div className="flex flex-col gap-4 sm:flex-row">
-        {booking.selfieDataUrl ? (
-          <button
-            type="button"
-            onClick={() => onPhoto(booking.selfieDataUrl, booking.fullName)}
-            className="shrink-0"
-            aria-label={`Enlarge face photo of ${booking.fullName}`}
-          >
-            <img
-              src={booking.selfieDataUrl}
-              alt={`Face photo of ${booking.fullName}`}
-              className="h-36 w-36 rounded-full border-4 border-navy object-cover"
-            />
-          </button>
-        ) : (
-          <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-bold text-navy">
-            No photo
-          </div>
-        )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-2xl font-bold text-navy">{booking.fullName}</h3>
@@ -446,10 +394,6 @@ function VettingCard({
         <div>
           <dt className="font-bold text-navy">WhatsApp</dt>
           <dd>{booking.whatsappNumber}</dd>
-        </div>
-        <div>
-          <dt className="font-bold text-navy">NIN / Voter&apos;s Card</dt>
-          <dd>{booking.ninOrVoterId}</dd>
         </div>
         <div>
           <dt className="font-bold text-navy">Street address</dt>

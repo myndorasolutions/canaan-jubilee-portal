@@ -1,7 +1,5 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element -- selfies are data URLs, which next/image cannot render */
-
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
@@ -65,14 +63,7 @@ export function BookingSlip({
         remaining={remaining}
         instructions={settings.churchPaymentInstructions}
       />
-      <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center">
-        {booking.selfieDataUrl ? (
-          <img
-            src={booking.selfieDataUrl}
-            alt={`Face photo of ${booking.fullName}`}
-            className="h-28 w-28 shrink-0 rounded-full border-4 border-navy object-cover"
-          />
-        ) : null}
+      <div className="mt-6">
         <div>
           <p className="text-2xl font-bold">{booking.fullName}</p>
           <p className="mt-1 inline-flex min-h-10 items-center rounded-full bg-navy px-4 text-base font-bold text-white">
