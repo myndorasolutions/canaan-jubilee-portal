@@ -43,15 +43,30 @@ export default function Home() {
               />
               <span>
                 I have read and agree to the{" "}
-                <Link href="/privacy" className="font-bold text-champions underline">
+                <Link
+                  href="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-bold text-champions underline"
+                >
                   Privacy Policy
                 </Link>
                 {", "}
-                <Link href="/terms" className="font-bold text-champions underline">
+                <Link
+                  href="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-bold text-champions underline"
+                >
                   Terms of Service
                 </Link>
                 {", and "}
-                <Link href="/disclaimer" className="font-bold text-champions underline">
+                <Link
+                  href="/disclaimer"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-bold text-champions underline"
+                >
                   Event Disclaimer
                 </Link>.
               </span>

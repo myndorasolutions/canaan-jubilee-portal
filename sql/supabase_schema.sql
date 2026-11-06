@@ -53,7 +53,7 @@ create table if not exists public.households (
   church_unit_or_referee text,
   home_address text,
   device_hash text,
-  duplicate_flags text[] not null default '{}',
+  duplicate_flags jsonb not null default '[]'::jsonb,
   status text not null default 'PENDING_VERIFICATION'
     check (status in (
       'PENDING_VERIFICATION',
@@ -67,7 +67,26 @@ create table if not exists public.households (
 );
 
 alter table public.households
-  add column if not exists duplicate_flags text[] not null default '{}';
+  add column if not exists duplicate_flags jsonb not null default '[]'::jsonb;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'households'
+      and column_name = 'duplicate_flags'
+      and udt_name = '_text'
+  ) then
+    alter table public.households
+      alter column duplicate_flags type jsonb
+      using to_jsonb(duplicate_flags);
+  end if;
+end $$;
+
+alter table public.households
+  alter column duplicate_flags set default '[]'::jsonb;
 
 alter table public.households
   add column if not exists whatsapp_initiated boolean not null default false;
@@ -230,7 +249,7 @@ create or replace function public.submit_household_booking(
   p_home_address text,
   p_device_hash text,
   p_items jsonb,
-  p_duplicate_flags text[] default array[]::text[]
+  p_duplicate_flags jsonb default '[]'::jsonb
 )
 returns jsonb
 language plpgsql
@@ -309,7 +328,7 @@ begin
     p_church_unit_or_referee,
     p_home_address,
     p_device_hash,
-    coalesce(p_duplicate_flags, array[]::text[]),
+    coalesce(p_duplicate_flags, '[]'::jsonb),
     'PENDING_VERIFICATION',
     now() + make_interval(hours => v_hours)
   )
@@ -385,7 +404,7 @@ end;
 $$;
 
 grant execute on function public.submit_household_booking(
-  text, text, text, text, text, text, jsonb, text[]
+  text, text, text, text, text, text, jsonb, jsonb
 ) to anon, authenticated;
 
 create or replace function public.lookup_household_booking(p_query text)

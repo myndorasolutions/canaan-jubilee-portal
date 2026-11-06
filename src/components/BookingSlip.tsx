@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -129,6 +130,12 @@ export function BookingSlip({
       >
         Print / Save Confirmation Slip
       </button>
+      <Link
+        href="/"
+        className="no-print mt-4 inline-flex min-h-14 w-full items-center justify-center rounded-lg border-2 border-champions bg-white px-5 text-lg font-bold text-champions"
+      >
+        Finish &amp; Return Home
+      </Link>
       <p className="mt-6 text-base font-bold text-myndora">
         Powered by Myndora Solutions Ltd.
       </p>
