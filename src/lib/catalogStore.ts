@@ -2034,41 +2034,83 @@ export async function submitHouseholdBooking(
   }
 
   const lines: BookingLine[] = [];
+  const usePublicItems = getSnapshot().mode === "supabase";
   for (const request of requested) {
-    const item = catalog.items.find((entry) => entry.id === request.productId);
-    if (!item || !item.isActive) {
-      return {
-        ok: false,
-        error: problem("STOCK", "One of the chosen items is no longer on the portal."),
-      };
-    }
     const quantity = Math.round(request.quantity);
-    if (quantity > item.maxPerHousehold) {
-      return {
-        ok: false,
-        error: problem("FORM", `You can only book ${item.maxPerHousehold} ticket(s) for ${item.name}.`),
+    let lineItem: {
+      id: string;
+      name: string;
+      maxPerHousehold: number;
+      allowNonMembers: boolean;
+      ticketPrice: number;
+    };
+    let soldOut = false;
+
+    if (usePublicItems) {
+      const item = getSnapshot().publicItems.find(
+        (entry) => entry.id === request.productId,
+      );
+      if (!item) {
+        return {
+          ok: false,
+          error: problem("STOCK", "One of the chosen items is no longer on the portal."),
+        };
+      }
+      soldOut = !item.isAvailable;
+      lineItem = {
+        id: item.id,
+        name: item.name,
+        maxPerHousehold: item.maxPerHousehold,
+        allowNonMembers: item.allowNonMembers,
+        ticketPrice: item.ticketPrice,
+      };
+    } else {
+      const item = catalog.items.find((entry) => entry.id === request.productId);
+      if (!item || !item.isActive) {
+        return {
+          ok: false,
+          error: problem("STOCK", "One of the chosen items is no longer on the portal."),
+        };
+      }
+      soldOut = quantity > item.totalStock - item.bookedStock;
+      lineItem = {
+        id: item.id,
+        name: item.name,
+        maxPerHousehold: item.maxPerHousehold,
+        allowNonMembers: item.allowNonMembers !== false,
+        ticketPrice: item.ticketPrice,
       };
     }
-    if (draft.category === "GUEST" && item.allowNonMembers === false) {
+
+    if (quantity > lineItem.maxPerHousehold) {
       return {
         ok: false,
-        error: problem("FORM", `${item.name} is for church members only.`),
+        error: problem(
+          "FORM",
+          `You can only book ${lineItem.maxPerHousehold} ticket(s) for ${lineItem.name}.`,
+        ),
       };
     }
-    if (quantity > item.totalStock - item.bookedStock) {
+    if (draft.category === "GUEST" && lineItem.allowNonMembers === false) {
+      return {
+        ok: false,
+        error: problem("FORM", `${lineItem.name} is for church members only.`),
+      };
+    }
+    if (soldOut) {
       return {
         ok: false,
         error: problem(
           "STOCK",
-          `${item.name} is fully booked. Please remove it and try again.`,
+          `${lineItem.name} is fully booked. Please remove it and try again.`,
         ),
       };
     }
     lines.push({
-      productId: item.id,
-      productName: item.name,
+      productId: lineItem.id,
+      productName: lineItem.name,
       quantity,
-      ticketUnitPrice: item.ticketPrice,
+      ticketUnitPrice: lineItem.ticketPrice,
     });
   }
 
