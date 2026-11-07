@@ -165,15 +165,17 @@ begin
     insert into public.booking_items (
       household_id,
       product_id,
+      product_name,
       quantity,
       ticket_unit_price,
       status
     ) values (
       v_household_id,
       v_product.id,
+      coalesce(nullif(v_item.elem->>'product_name', ''), v_product.name),
       v_qty,
       v_product.ticket_price,
-      'HELD'
+      'RESERVED'
     );
 
     update public.products

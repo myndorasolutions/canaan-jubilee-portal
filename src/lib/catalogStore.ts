@@ -2189,7 +2189,9 @@ async function persistCloudBooking(
     p_duplicate_flags: booking.duplicateFlags,
     p_items: booking.items.map((line) => ({
       product_id: line.productId,
+      product_name: line.productName,
       quantity: line.quantity,
+      ticket_unit_price: line.ticketUnitPrice,
     })),
   });
   if (error) {

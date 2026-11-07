@@ -116,15 +116,43 @@ create table if not exists public.booking_items (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households (id) on delete cascade,
   product_id uuid not null references public.products (id) on delete cascade,
+  product_name text not null,
   quantity integer not null check (quantity > 0),
   ticket_unit_price numeric not null check (ticket_unit_price >= 0),
   subsidized_unit_price numeric,
-  status text not null default 'HELD',
+  status text not null default 'RESERVED'
+    check (status in ('RESERVED', 'ACCREDITED', 'PAID_ISSUED', 'EXPIRED', 'REJECTED')),
   unique (household_id, product_id)
 );
 
 alter table public.booking_items
   add column if not exists subsidized_unit_price numeric;
+
+alter table public.booking_items
+  add column if not exists product_name text;
+
+update public.booking_items bi
+set product_name = p.name
+from public.products p
+where bi.product_id = p.id
+  and (bi.product_name is null or bi.product_name = '');
+
+alter table public.booking_items
+  alter column product_name set not null;
+
+update public.booking_items
+set status = 'RESERVED'
+where status = 'HELD';
+
+alter table public.booking_items
+  alter column status set default 'RESERVED';
+
+alter table public.booking_items
+  drop constraint if exists booking_items_status_check;
+
+alter table public.booking_items
+  add constraint booking_items_status_check
+  check (status in ('RESERVED', 'ACCREDITED', 'PAID_ISSUED', 'EXPIRED', 'REJECTED'));
 
 create table if not exists public.system_settings (
   id integer primary key default 1 check (id = 1),
@@ -379,15 +407,17 @@ begin
     insert into public.booking_items (
       household_id,
       product_id,
+      product_name,
       quantity,
       ticket_unit_price,
       status
     ) values (
       v_household_id,
       v_product.id,
+      coalesce(nullif(v_item.elem->>'product_name', ''), v_product.name),
       v_qty,
       v_product.ticket_price,
-      'HELD'
+      'RESERVED'
     );
 
     update public.products
