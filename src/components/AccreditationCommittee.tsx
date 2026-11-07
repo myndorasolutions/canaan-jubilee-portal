@@ -308,17 +308,39 @@ function VettingCard({
   const [batch, setBatch] = useState(booking.pickupBatch || batches[0] || "");
   const [reason, setReason] = useState("");
   const [notifyUrl, setNotifyUrl] = useState<string | null>(null);
+  const [passUrl, setPassUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  function approve() {
-    const result = accreditHousehold(booking.id, batch, "");
-    if (!result) {
-      setMessage("This booking could not be accredited.");
-      return;
-    }
+  async function approve() {
+    if (saving) return;
+    setSaving(true);
     setNotifyUrl(null);
-    setMessage(`#${result.booking.referenceCode} is accredited for ${result.booking.pickupBatch}.`);
-    if (result.whatsappUrl) window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
+    setPassUrl(null);
+    try {
+      const result = await accreditHousehold(booking.id, batch, "");
+      if (!result) {
+        const text = "This booking could not be accredited.";
+        setMessage(text);
+        window.alert(text);
+        return;
+      }
+      setMessage(
+        `#${result.booking.referenceCode} is accredited for ${result.booking.pickupBatch}.`,
+      );
+      if (!result.whatsappUrl) return;
+      const opened = window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
+      if (!opened) setPassUrl(result.whatsappUrl);
+    } catch (error) {
+      const text =
+        error instanceof Error && error.message
+          ? error.message
+          : "Accreditation could not be saved.";
+      setMessage(text);
+      window.alert(text);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function reject() {
@@ -452,9 +474,10 @@ function VettingCard({
           <button
             type="button"
             onClick={approve}
-            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg bg-emerald px-4 text-base font-bold text-white"
+            disabled={saving}
+            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg bg-emerald px-4 text-base font-bold text-white disabled:bg-slate-300 disabled:text-slate-700"
           >
-            🟢 Approve &amp; Send WhatsApp Pass
+            {saving ? "Saving accreditation…" : "🟢 Approve & Send WhatsApp Pass"}
           </button>
           <button
             type="button"
@@ -494,6 +517,16 @@ function VettingCard({
         >
           🔴 Reject Duplicate / Cancel (Return Stock)
         </button>
+        {passUrl ? (
+          <a
+            href={passUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-12 items-center justify-center rounded-lg border-2 border-emerald px-4 text-base font-bold text-emerald"
+          >
+            Send WhatsApp pass
+          </a>
+        ) : null}
         {notifyUrl ? (
           <a
             href={notifyUrl}

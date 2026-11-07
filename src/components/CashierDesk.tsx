@@ -34,6 +34,7 @@ export function CashierDesk({
   const [method, setMethod] = useState<TicketPaymentMethod>("CASH");
   const [cashierName, setCashierName] = useState("");
   const [notice, setNotice] = useState("");
+  const [accrediting, setAccrediting] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanHandled = useRef(false);
   const selected = households.find((booking) => booking.id === selectedId) ?? null;
@@ -116,21 +117,35 @@ export function CashierDesk({
     );
   }
 
-  function quickAccredit() {
-    if (!selected) return;
+  async function quickAccredit() {
+    if (!selected || accrediting) return;
     const batch = selected.pickupBatch || batches[0] || "";
-    const result = accreditHousehold(
-      selected.id,
-      batch,
-      "Quick accredit from the cashier desk.",
-    );
-    if (!result) {
-      setNotice("This booking could not be accredited.");
-      return;
+    setAccrediting(true);
+    try {
+      const result = await accreditHousehold(
+        selected.id,
+        batch,
+        "Quick accredit from the cashier desk.",
+      );
+      if (!result) {
+        const text = "This booking could not be accredited.";
+        setNotice(text);
+        window.alert(text);
+        return;
+      }
+      setNotice(
+        `#${result.booking.referenceCode} is accredited. Collect the ticket fee when the buyer is ready.`,
+      );
+    } catch (error) {
+      const text =
+        error instanceof Error && error.message
+          ? error.message
+          : "This booking could not be accredited.";
+      setNotice(text);
+      window.alert(text);
+    } finally {
+      setAccrediting(false);
     }
-    setNotice(
-      `#${result.booking.referenceCode} is accredited. Collect the ticket fee when the buyer is ready.`,
-    );
   }
 
   const receipt = selected ? ticketReceiptWhatsappUrl(selected) : null;
@@ -253,9 +268,10 @@ export function CashierDesk({
             <button
               type="button"
               onClick={quickAccredit}
-              className="mt-6 inline-flex min-h-14 items-center justify-center rounded-lg bg-amber-500 px-5 text-lg font-bold text-navy"
+              disabled={accrediting}
+              className="mt-6 inline-flex min-h-14 items-center justify-center rounded-lg bg-amber-500 px-5 text-lg font-bold text-navy disabled:bg-slate-300 disabled:text-slate-700"
             >
-              Quick Accredit &amp; Approve Now
+              {accrediting ? "Saving accreditation…" : "Quick Accredit & Approve Now"}
             </button>
           ) : null}
 

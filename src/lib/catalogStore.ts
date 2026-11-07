@@ -1442,25 +1442,65 @@ function patchHousehold(id: string, patch: Partial<HouseholdBooking>) {
   return nextBooking;
 }
 
+function householdDeskPayload(booking: HouseholdBooking) {
+  return {
+    status: booking.status,
+    whatsapp_initiated: booking.whatsappInitiated,
+    verification_hash: booking.verificationHash,
+    pickup_batch: booking.pickupBatch,
+    rejection_reason: booking.rejectionReason,
+    admin_note: booking.adminNote,
+    expires_at: booking.expiresAt,
+    paid_at: booking.paidAt || null,
+    payment_method: booking.paymentMethod || null,
+    issued_by: booking.issuedBy,
+  };
+}
+
 async function persistHouseholdPatch(booking: HouseholdBooking) {
   const error = await updateAdjusting(
     "households",
-    {
-      status: booking.status,
-      whatsapp_initiated: booking.whatsappInitiated,
-      verification_hash: booking.verificationHash,
-      pickup_batch: booking.pickupBatch,
-      rejection_reason: booking.rejectionReason,
-      admin_note: booking.adminNote,
-      expires_at: booking.expiresAt,
-      paid_at: booking.paidAt || null,
-      payment_method: booking.paymentMethod || null,
-      issued_by: booking.issuedBy,
-    },
+    householdDeskPayload(booking),
     "id",
     booking.id,
   );
   if (error) throw new Error(error);
+}
+
+async function persistHouseholdAccreditation(booking: HouseholdBooking) {
+  const db = getSupabase();
+  if (!db) throw new Error("Supabase is not connected on this browser.");
+  try {
+    const household = await db
+      .from("households")
+      .update({
+        ...householdDeskPayload(booking),
+        status: "ACCREDITED",
+        pickup_batch: booking.pickupBatch,
+      })
+      .eq("id", booking.id)
+      .select("id");
+    if (household.error) throw household.error;
+    if (!household.data || household.data.length === 0) {
+      throw new Error(
+        "The household was not updated. It is still pending verification.",
+      );
+    }
+
+    const items = await db
+      .from("booking_items")
+      .update({ status: "ACCREDITED" })
+      .eq("household_id", booking.id)
+      .select("id");
+    if (items.error) throw items.error;
+    if (booking.items.length > 0 && (!items.data || items.data.length === 0)) {
+      throw new Error(
+        "The household was accredited, but its ticket lines were not updated.",
+      );
+    }
+  } catch (error) {
+    throw new Error(cloudMessage(error));
+  }
 }
 
 export function markWhatsappInitiated(id: string) {
@@ -1514,7 +1554,7 @@ function persistReleasedItems(items: CatalogItem[]) {
   }
 }
 
-export function accreditHousehold(
+export async function accreditHousehold(
   bookingId: string,
   assignedBatch: string,
   adminNote: string,
@@ -1530,10 +1570,10 @@ export function accreditHousehold(
     expiresAt: new Date(Date.now() + windowMs()).toISOString(),
   });
   if (!next) return null;
-  saveBookingState(getSnapshot().catalog, replaceHousehold(next));
   if (getSnapshot().mode === "supabase") {
-    void persistHouseholdPatch(next).catch(rememberCloudError);
+    await persistHouseholdAccreditation(next);
   }
+  saveBookingState(getSnapshot().catalog, replaceHousehold(next));
   return { booking: next, whatsappUrl: accreditationWhatsappUrl(next) };
 }
 
