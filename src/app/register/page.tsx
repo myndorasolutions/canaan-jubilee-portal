@@ -78,10 +78,10 @@ export default function RegisterPage() {
                   </li>
                   <li className="rounded-2xl border-2 border-emerald bg-emerald/10 p-5">
                     <h2 className="text-xl font-bold text-navy">
-                      72-hour confirmation window
+                      5-day confirmation window
                     </h2>
                     <p className="mt-2 text-lg leading-relaxed">
-                      After you book, confirm via WhatsApp within 72 hours.
+                      After you book, confirm via WhatsApp within 5 days.
                     </p>
                   </li>
                 </ul>

@@ -43,9 +43,9 @@ export default function TermsPage() {
           determined by the event administrators.
         </li>
       </ul>
-      <h2>4. The 72-Hour Rule</h2>
+      <h2>4. The 5-Day Rule</h2>
       <p>
-        Upon booking, you have 72 hours to receive accreditation. If your booking
+        Upon booking, you have 5 days to receive accreditation. If your booking
         is not approved by the Accreditation Desk, or if you fail to attend your
         assigned batch, your reserved tickets will expire and be returned to the
         public pool.

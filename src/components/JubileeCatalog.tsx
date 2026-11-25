@@ -22,7 +22,7 @@ import {
 const STAGES = [
   "STAGE 1: Household Registration (Identity & Anti-Duplicate Gate)",
   "STAGE 2: Select & Book Jubilee Tickets",
-  "STAGE 3: Booking Reference & 72-Hour WhatsApp Confirmation",
+  "STAGE 3: Booking Reference & 5-Day WhatsApp Confirmation",
 ] as const;
 
 export default function JubileeCatalog() {
@@ -436,7 +436,7 @@ function OpenCatalog({
           >
             {pending
               ? "Saving your booking…"
-              : "Confirm & Lock Selected Tickets (72-Hour Hold)"}
+              : "Confirm & Lock Selected Tickets (5-Day Hold)"}
           </button>
         </div>
       ) : null}
@@ -472,7 +472,7 @@ function OpenCatalog({
               onClick={() => void send(false)}
               className="inline-flex min-h-12 items-center justify-center rounded-lg bg-emerald px-5 text-base font-bold text-white disabled:bg-slate-400"
             >
-              Confirm &amp; Lock Selected Tickets (72-Hour Hold)
+              Confirm &amp; Lock Selected Tickets (5-Day Hold)
             </button>
           </div>
         </div>

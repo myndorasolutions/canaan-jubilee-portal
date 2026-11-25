@@ -269,7 +269,7 @@ export default function AdminDashboard() {
                 : "inline-flex min-h-12 items-center justify-center rounded-lg border-2 border-navy bg-white px-5 text-base font-bold text-navy"
             }
           >
-            ⚙️ WhatsApp Desk &amp; 72-Hour Portal Settings
+            ⚙️ WhatsApp Desk &amp; 5-Day Portal Settings
           </button>
           <button
             type="button"
@@ -649,7 +649,7 @@ function WhatsAppDeskSettings({ settings }: { settings: SystemSettings }) {
       className="mt-8 max-w-3xl rounded-2xl border-2 border-navy bg-white p-5"
     >
       <h2 className="text-2xl font-bold text-navy">
-        ⚙️ WhatsApp Desk &amp; 72-Hour Settings
+        ⚙️ WhatsApp Desk &amp; 5-Day Settings
       </h2>
       <p className="mt-2 text-lg leading-relaxed">
         These details are used on the public confirmation slip and the

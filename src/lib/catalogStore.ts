@@ -138,7 +138,7 @@ export type SystemSettings = {
 
 export const DEFAULT_SETTINGS: SystemSettings = {
   whatsappDeskNumber: "2348000000000",
-  replyWindowHours: 72,
+  replyWindowHours: 120,
   churchPaymentInstructions:
     "After accreditation, pay the total ticket fee at the Canaan Ministries church desk and collect your physical tickets during your assigned pickup batch. Bring this confirmation slip and a photo ID that matches the head of household.",
   pickupBatches: [
@@ -826,7 +826,7 @@ async function persistPortalOpen(portalOpen: boolean) {
     const inserted = await db.from("system_settings").insert({
       id: 1,
       program_title: "Canaan Jubilee Auction Portal",
-      reply_window_hours: 72,
+      reply_window_hours: 120,
       booking_open: portalOpen,
       whatsapp_desk_number: DEFAULT_SETTINGS.whatsappDeskNumber,
       church_payment_instructions: DEFAULT_SETTINGS.churchPaymentInstructions,
@@ -1251,14 +1251,39 @@ export function statusLabel(status: HouseholdStatus) {
   }
 }
 
+export function formatWindowLength(hours: number) {
+  const safe = Math.max(1, Math.round(hours) || 120);
+  if (safe % 24 === 0) {
+    const days = safe / 24;
+    return days === 1 ? "1 day" : `${days} days`;
+  }
+  return safe === 1 ? "1 hour" : `${safe} hours`;
+}
+
+export function formatWindowAdjective(hours: number) {
+  const safe = Math.max(1, Math.round(hours) || 120);
+  if (safe % 24 === 0) {
+    const days = safe / 24;
+    return days === 1 ? "1-day" : `${days}-day`;
+  }
+  return safe === 1 ? "1-hour" : `${safe}-hour`;
+}
+
 export function holdRemaining(expiresAt: string, now = Date.now()) {
   const ms = new Date(expiresAt).getTime() - now;
   if (!Number.isFinite(ms) || ms <= 0) return "Hold expired";
   const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  return `${hours}h ${minutes}m ${seconds}s left of the confirmation window`;
+  const parts = [
+    days > 0 ? `${days}d` : "",
+    days > 0 || hours > 0 ? `${hours}h` : "",
+    `${minutes}m`,
+    `${seconds}s`,
+  ].filter(Boolean);
+  return `${parts.join(" ")} left of the confirmation window`;
 }
 
 export function formatDeadline(iso: string) {
@@ -1299,7 +1324,7 @@ export function whatsappDeskLink(booking: HouseholdBooking, settings: SystemSett
     `Reserved tickets: ${tickets}`,
     `Total Ticket Fee: ${formatNaira(booking.totalTicketFee)}`,
     `Verification hash: ${booking.verificationHash}`,
-    `${settings.replyWindowHours}-hour window ends: ${formatDeadline(booking.expiresAt)}`,
+    `${formatWindowAdjective(settings.replyWindowHours)} window ends: ${formatDeadline(booking.expiresAt)}`,
   ].join("\n");
   return `https://wa.me/${desk}?text=${encodeURIComponent(message)}`;
 }
@@ -1672,7 +1697,7 @@ function holdsReservedStock(status: HouseholdStatus) {
 }
 
 function windowMs() {
-  const hours = Math.max(1, getSnapshot().settings.replyWindowHours || 72);
+  const hours = Math.max(1, getSnapshot().settings.replyWindowHours || 120);
   return hours * 60 * 60 * 1000;
 }
 
@@ -1683,7 +1708,7 @@ function buyerPhone(booking: HouseholdBooking) {
 export function accreditationWhatsappUrl(booking: HouseholdBooking) {
   const phone = buyerPhone(booking);
   if (!phone) return null;
-  const message = `Congratulations ${booking.fullName}! Your household booking (#${booking.referenceCode}) for the Canaan Jubilee Auction Portal has been ACCREDITED. Assigned Ticket Payment & Collection Batch: ${booking.pickupBatch}. Total Ticket Fee to pay at the Church Desk: ${formatNaira(booking.totalTicketFee)}. Please present this message and your code #${booking.referenceCode} within ${getSnapshot().settings.replyWindowHours} hours. Powered by Myndora Solutions Ltd.`;
+  const message = `Congratulations ${booking.fullName}! Your household booking (#${booking.referenceCode}) for the Canaan Jubilee Auction Portal has been ACCREDITED. Assigned Ticket Payment & Collection Batch: ${booking.pickupBatch}. Total Ticket Fee to pay at the Church Desk: ${formatNaira(booking.totalTicketFee)}. Please present this message and your code #${booking.referenceCode} within ${formatWindowLength(getSnapshot().settings.replyWindowHours)}. Powered by Myndora Solutions Ltd.`;
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
@@ -2413,7 +2438,7 @@ export async function submitHouseholdBooking(
   }
 
   const createdAt = new Date();
-  const windowHours = Math.max(1, getSnapshot().settings.replyWindowHours || 72);
+  const windowHours = Math.max(1, getSnapshot().settings.replyWindowHours || 120);
   const booking: HouseholdBooking = {
     id: crypto.randomUUID(),
     referenceCode: makeReference(new Set(households.map((entry) => entry.referenceCode))),

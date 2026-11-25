@@ -8,6 +8,7 @@ import {
   bookingQrValue,
   formatDeadline,
   formatNaira,
+  formatWindowAdjective,
   holdRemaining,
   whatsappDeskLink,
   type HouseholdBooking,
@@ -158,7 +159,7 @@ function StatusBanner({
     return (
       <div className="mt-5 rounded-2xl border-4 border-champions bg-amber-100 p-4 text-lg font-bold leading-relaxed">
         <p>
-          ⏳ {hours}-Hour Confirmation Window Active: Your reserved tickets are
+          ⏳ {formatWindowAdjective(hours)} Confirmation Window Active: Your reserved tickets are
           held until {formatDeadline(booking.expiresAt)}. You MUST tap the green
           WhatsApp button below to verify your WhatsApp line and complete
           accreditation before this timer expires.
@@ -198,7 +199,7 @@ function StatusBanner({
       <div className="mt-5 rounded-2xl border-4 border-red-800 bg-red-50 p-4 text-lg font-bold leading-relaxed text-red-900">
         <p>🔴 EXPIRED</p>
         <p className="mt-2 font-semibold">
-          The {hours}-hour confirmation window lapsed before this household
+          The {formatWindowAdjective(hours)} confirmation window lapsed before this household
           finished WhatsApp accreditation. The ticket hold is no longer active.
         </p>
       </div>

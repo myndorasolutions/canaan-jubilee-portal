@@ -18,7 +18,7 @@ const steps = [
   },
   {
     number: "2",
-    text: "Confirm via WhatsApp within 72 Hours",
+    text: "Confirm via WhatsApp within 5 Days",
   },
   {
     number: "3",

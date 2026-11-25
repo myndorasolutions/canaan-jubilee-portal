@@ -65,7 +65,7 @@ create table if not exists public.households (
       'EXPIRED',
       'REJECTED'
     )),
-  expires_at timestamptz not null default (now() + interval '72 hours'),
+  expires_at timestamptz not null default (now() + interval '5 days'),
   created_at timestamptz not null default now()
 );
 
@@ -160,7 +160,7 @@ alter table public.booking_items
 create table if not exists public.system_settings (
   id integer primary key default 1 check (id = 1),
   program_title text not null default 'Canaan Jubilee Auction Portal',
-  reply_window_hours integer not null default 72 check (reply_window_hours > 0),
+  reply_window_hours integer not null default 120 check (reply_window_hours > 0),
   booking_open boolean not null default true,
   whatsapp_desk_number text not null default '2348000000000',
   church_payment_instructions text not null default 'After accreditation, pay the total ticket fee at the Canaan Ministries church desk and collect your physical tickets during your assigned pickup batch. Bring this confirmation slip and a photo ID that matches the head of household.',
@@ -325,12 +325,12 @@ begin
     raise exception 'Choose at least one item';
   end if;
 
-  select coalesce(reply_window_hours, 72)
+  select coalesce(reply_window_hours, 120)
   into v_hours
   from public.system_settings
   where id = 1;
 
-  v_hours := coalesce(v_hours, 72);
+  v_hours := coalesce(v_hours, 120);
 
   loop
     v_attempts := v_attempts + 1;
