@@ -1090,7 +1090,20 @@ export function useCatalog(options?: { loadCloud?: boolean }) {
         ...catalog,
         items: catalog.items.map((item) => {
           if (item.id !== id) return item;
-          updated = normalizeItem({ ...item, ...patch, id: item.id });
+          const nextPatch = { ...patch };
+          if (
+            typeof nextPatch.memberTotalStock === "number" &&
+            Math.round(nextPatch.memberTotalStock) < item.memberBookedStock
+          ) {
+            delete nextPatch.memberTotalStock;
+          }
+          if (
+            typeof nextPatch.guestTotalStock === "number" &&
+            Math.round(nextPatch.guestTotalStock) < item.guestBookedStock
+          ) {
+            delete nextPatch.guestTotalStock;
+          }
+          updated = normalizeItem({ ...item, ...nextPatch, id: item.id });
           if (!("subsidizedItemCost" in patch)) {
             updated = { ...updated, subsidizedItemCost: item.subsidizedItemCost };
           }

@@ -132,11 +132,11 @@ export default function AdminDashboard() {
       return;
     }
     if (!Number.isFinite(memberTotalStock) || memberTotalStock < 0) {
-      setFormError("Member stock must be 0 or more.");
+      setFormError("Member Total Stock must be 0 or more.");
       return;
     }
     if (!Number.isFinite(guestTotalStock) || guestTotalStock < 0) {
-      setFormError("Guest stock must be 0 or more.");
+      setFormError("Non-Member Total Stock must be 0 or more.");
       return;
     }
     if (
@@ -487,7 +487,7 @@ export default function AdminDashboard() {
                   className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
                 />
               </Field>
-              <Field label="Member Stock">
+              <Field label="Member Total Stock">
                 <input
                   inputMode="numeric"
                   value={draft.memberTotalStock}
@@ -500,7 +500,7 @@ export default function AdminDashboard() {
                   className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
                 />
               </Field>
-              <Field label="Guest Stock">
+              <Field label="Non-Member Total Stock">
                 <input
                   inputMode="numeric"
                   value={draft.guestTotalStock}
@@ -783,8 +783,26 @@ function ProductInventoryTable({
     );
   }
 
+  const memberTotal = items.reduce((sum, item) => sum + item.memberTotalStock, 0);
+  const memberBooked = items.reduce((sum, item) => sum + item.memberBookedStock, 0);
+  const guestTotal = items.reduce((sum, item) => sum + item.guestTotalStock, 0);
+  const guestBooked = items.reduce((sum, item) => sum + item.guestBookedStock, 0);
+
   return (
-    <div className="overflow-x-auto rounded-xl border-2 border-navy bg-white">
+    <div>
+      <div className="mb-3 flex flex-wrap gap-2 text-xs">
+        <StockSummary
+          label="Member Total Stock"
+          booked={memberBooked}
+          total={memberTotal}
+        />
+        <StockSummary
+          label="Non-Member Total Stock"
+          booked={guestBooked}
+          total={guestTotal}
+        />
+      </div>
+      <div className="overflow-x-auto rounded-xl border-2 border-navy bg-white">
       <table className="w-full min-w-[1080px] border-collapse text-left text-sm text-navy">
         <thead>
           <tr className="border-b border-navy/20 bg-slate-50 text-xs uppercase">
@@ -802,7 +820,7 @@ function ProductInventoryTable({
             </th>
           </tr>
           <tr className="border-b border-navy/20 bg-slate-50 text-xs">
-            {["Total", "Booked", "Left", "Max", "Total", "Booked", "Left", "Max"].map(
+            {["Total", "Booked", "Remaining", "Max", "Total", "Booked", "Remaining", "Max"].map(
               (label, index) => (
                 <th key={`${label}-${index}`} className="px-2 py-1 font-semibold">
                   {label}
@@ -830,7 +848,28 @@ function ProductInventoryTable({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
+  );
+}
+
+function StockSummary({
+  label,
+  booked,
+  total,
+}: {
+  label: string;
+  booked: number;
+  total: number;
+}) {
+  const remaining = Math.max(0, total - booked);
+  return (
+    <p className="inline-flex items-center gap-2 rounded-full border border-navy/20 bg-white px-3 py-1">
+      <span className="font-semibold text-slate-600">{label}</span>
+      <span className="font-bold text-navy">
+        Booked {booked} / Remaining {remaining}
+      </span>
+    </p>
   );
 }
 
@@ -864,7 +903,7 @@ function ProductInventoryRows({
           total={item.memberTotalStock}
           booked={item.memberBookedStock}
           max={item.memberMaxPerHousehold}
-          totalLabel={`Member stock for ${item.name}`}
+          totalLabel={`Member Total Stock for ${item.name}`}
           bookedLabel={`Member booked for ${item.name}`}
           maxLabel={`Member max for ${item.name}`}
           onTotal={(memberTotalStock) => onUpdate({ memberTotalStock })}
@@ -882,8 +921,8 @@ function ProductInventoryRows({
           total={item.guestTotalStock}
           booked={item.guestBookedStock}
           max={item.guestMaxPerHousehold}
-          totalLabel={`Guest stock for ${item.name}`}
-          bookedLabel={`Guest booked for ${item.name}`}
+          totalLabel={`Non-Member Total Stock for ${item.name}`}
+          bookedLabel={`Non-member booked for ${item.name}`}
           maxLabel={`Guest max for ${item.name}`}
           onTotal={(guestTotalStock) => onUpdate({ guestTotalStock })}
           onBooked={(guestBookedStock) =>
@@ -971,6 +1010,7 @@ function QuotaCells({
   onBooked: (value: number) => void;
   onMax: (value: number) => void;
 }) {
+  const [stockError, setStockError] = useState<string | null>(null);
   const remaining = Math.max(0, total - booked);
   const percent = total === 0 ? 0 : Math.min(100, Math.round((booked / total) * 100));
   const pill =
@@ -983,7 +1023,22 @@ function QuotaCells({
   return (
     <>
       <td className="px-2 py-2">
-        <MiniNumber label={totalLabel} value={total} min={0} onCommit={onTotal} />
+        <MiniNumber
+          label={totalLabel}
+          value={total}
+          min={0}
+          cannotGoBelow={booked}
+          onInvalid={setStockError}
+          onCommit={(next) => {
+            setStockError(null);
+            onTotal(next);
+          }}
+        />
+        {stockError ? (
+          <p className="mt-1 max-w-28 text-xs font-semibold text-red-800" role="alert">
+            {stockError}
+          </p>
+        ) : null}
       </td>
       <td className="px-2 py-2">
         <MiniNumber
@@ -995,9 +1050,10 @@ function QuotaCells({
         />
       </td>
       <td className="px-2 py-2">
-        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${pill}`}>
-          {remaining} left
-        </span>
+        <p className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${pill}`}>
+          {booked} / {total}
+        </p>
+        <p className="mt-1 text-xs font-semibold">Remaining {remaining}</p>
         <div className="mt-1 h-1 w-16 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
           <div className={`h-full ${tone}`} style={{ width: `${percent}%` }} />
         </div>
@@ -1013,14 +1069,18 @@ function MiniNumber({
   value,
   min,
   max,
+  cannotGoBelow,
   label,
   onCommit,
+  onInvalid,
 }: {
   value: number;
   min: number;
   max?: number;
+  cannotGoBelow?: number;
   label: string;
   onCommit: (value: number) => void;
+  onInvalid?: (message: string | null) => void;
 }) {
   const [text, setText] = useState(String(value));
   const [lastValue, setLastValue] = useState(value);
@@ -1030,14 +1090,22 @@ function MiniNumber({
     setText(String(value));
   }
 
-  function commit(nextText: string) {
+  function commit(nextText: string, live: boolean) {
     const parsed = Number(nextText);
-    if (!Number.isFinite(parsed)) {
-      setText(String(value));
+    if (!Number.isFinite(parsed) || nextText.trim() === "") {
+      if (!live) setText(String(value));
       return;
     }
     let next = Math.max(min, Math.round(parsed));
     if (max != null) next = Math.min(max, next);
+    if (cannotGoBelow != null && next < cannotGoBelow) {
+      if (!live) {
+        onInvalid?.(`Keep at least ${cannotGoBelow} already booked.`);
+        setText(String(value));
+      }
+      return;
+    }
+    onInvalid?.(null);
     setText(String(next));
     if (next !== value) onCommit(next);
   }
@@ -1050,9 +1118,9 @@ function MiniNumber({
       onChange={(event) => {
         const nextText = event.target.value;
         setText(nextText);
-        if (/^\d+$/.test(nextText)) commit(nextText);
+        if (/^\d+$/.test(nextText)) commit(nextText, true);
       }}
-      onBlur={() => commit(text)}
+      onBlur={() => commit(text, false)}
       className="h-8 w-16 rounded border border-navy px-2 text-sm"
     />
   );
