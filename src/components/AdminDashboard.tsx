@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useId, useState, type ReactNode } from "react";
+import { FormEvent, Fragment, useId, useState, type ReactNode } from "react";
 import AdminLogin from "@/components/AdminLogin";
 import Footer from "@/components/Footer";
 import Header from "@/components/Header";
-import { ImagePicker, ItemVisual } from "@/components/ItemVisual";
-import { changeAdminPassword, logoutAdmin, useAdminSession } from "@/lib/adminAuth";
+import { ImagePicker } from "@/components/ItemVisual";
+import { useAdminSession } from "@/lib/adminAuth";
 import { AccreditationCommittee } from "@/components/AccreditationCommittee";
 import { CashierDesk } from "@/components/CashierDesk";
 import {
@@ -26,8 +26,10 @@ type Draft = {
   category: string;
   ticketPrice: string;
   subsidizedItemCost: string;
-  maxPerHousehold: string;
-  totalStock: string;
+  memberMaxPerHousehold: string;
+  guestMaxPerHousehold: string;
+  memberTotalStock: string;
+  guestTotalStock: string;
   imageUrl: string;
   allowNonMembers: boolean;
 };
@@ -37,14 +39,16 @@ const EMPTY_DRAFT: Draft = {
   category: CATEGORIES[0],
   ticketPrice: "1000",
   subsidizedItemCost: "",
-  maxPerHousehold: "1",
-  totalStock: "10",
+  memberMaxPerHousehold: "1",
+  guestMaxPerHousehold: "1",
+  memberTotalStock: "10",
+  guestTotalStock: "0",
   imageUrl: "icon:wheat",
   allowNonMembers: true,
 };
 
 export default function AdminDashboard() {
-  const authed = useAdminSession();
+  const { status, logoutAdmin } = useAdminSession();
   const {
     catalog,
     mode,
@@ -58,7 +62,7 @@ export default function AdminDashboard() {
     clearAllItems,
     households,
     settings,
-  } = useCatalog();
+  } = useCatalog({ loadCloud: status === "authenticated" });
   const [formOpen, setFormOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [formError, setFormError] = useState<string | null>(null);
@@ -78,7 +82,19 @@ export default function AdminDashboard() {
     setSeedMessage(error ?? "The saved catalog is now in Supabase.");
   }
 
-  if (!authed) {
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-full flex-1 flex-col">
+        <Header />
+        <p className="px-4 py-10 text-lg font-semibold text-navy">
+          Checking session…
+        </p>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (status !== "authenticated") {
     return (
       <div className="flex min-h-full flex-1 flex-col">
         <Header />
@@ -92,8 +108,10 @@ export default function AdminDashboard() {
     event.preventDefault();
     const name = draft.name.trim();
     const ticketPrice = Number(draft.ticketPrice);
-    const maxPerHousehold = Number(draft.maxPerHousehold);
-    const totalStock = Number(draft.totalStock);
+    const memberMaxPerHousehold = Number(draft.memberMaxPerHousehold);
+    const guestMaxPerHousehold = Number(draft.guestMaxPerHousehold);
+    const memberTotalStock = Number(draft.memberTotalStock);
+    const guestTotalStock = Number(draft.guestTotalStock);
     const costText = draft.subsidizedItemCost.trim();
     const subsidizedItemCost = costText === "" ? undefined : Number(costText);
 
@@ -105,12 +123,20 @@ export default function AdminDashboard() {
       setFormError("Enter a ticket fee of 0 or more.");
       return;
     }
-    if (!Number.isFinite(maxPerHousehold) || maxPerHousehold < 1) {
-      setFormError("Max tickets per family must be at least 1.");
+    if (!Number.isFinite(memberMaxPerHousehold) || memberMaxPerHousehold < 1) {
+      setFormError("Member max tickets must be at least 1.");
       return;
     }
-    if (!Number.isFinite(totalStock) || totalStock < 0) {
-      setFormError("Total secret stock must be 0 or more.");
+    if (!Number.isFinite(guestMaxPerHousehold) || guestMaxPerHousehold < 1) {
+      setFormError("Guest max tickets must be at least 1.");
+      return;
+    }
+    if (!Number.isFinite(memberTotalStock) || memberTotalStock < 0) {
+      setFormError("Member stock must be 0 or more.");
+      return;
+    }
+    if (!Number.isFinite(guestTotalStock) || guestTotalStock < 0) {
+      setFormError("Guest stock must be 0 or more.");
       return;
     }
     if (
@@ -126,8 +152,11 @@ export default function AdminDashboard() {
       category: draft.category,
       ticketPrice,
       subsidizedItemCost,
-      maxPerHousehold,
-      totalStock,
+      maxPerHousehold: memberMaxPerHousehold,
+      memberMaxPerHousehold,
+      guestMaxPerHousehold,
+      memberTotalStock,
+      guestTotalStock,
       isActive: true,
       imageUrl: draft.imageUrl,
       allowNonMembers: draft.allowNonMembers,
@@ -184,7 +213,7 @@ export default function AdminDashboard() {
               </Link>
               <button
                 type="button"
-                onClick={logoutAdmin}
+                onClick={() => void logoutAdmin()}
                 className="inline-flex min-h-12 items-center justify-center rounded-lg bg-red-800 px-5 text-base font-bold text-white"
               >
                 Logout
@@ -258,10 +287,7 @@ export default function AdminDashboard() {
         {tab === "cashier" ? (
           <CashierDesk households={households} batches={settings.pickupBatches} />
         ) : tab === "desk" ? (
-          <>
-            <WhatsAppDeskSettings settings={settings} />
-            <AdminSettings />
-          </>
+          <WhatsAppDeskSettings settings={settings} />
         ) : tab === "committee" ? (
           <AccreditationCommittee
             households={households}
@@ -349,24 +375,13 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            <ul className="mt-6 space-y-5">
-              {catalog.items.map((item) => (
-                <AdminItemCard
-                  key={item.id}
-                  item={item}
-                  onUpdate={(patch) => updateItem(item.id, patch)}
-                  onDelete={() => {
-                    if (
-                      window.confirm(
-                        `Delete / Remove “${item.name}” from the catalog? This cannot be undone.`,
-                      )
-                    ) {
-                      deleteItem(item.id);
-                    }
-                  }}
-                />
-              ))}
-            </ul>
+            <div className="mt-6">
+              <ProductInventoryTable
+                items={catalog.items}
+                onUpdate={updateItem}
+                onDelete={deleteItem}
+              />
+            </div>
           </>
         )}
       </main>
@@ -446,27 +461,53 @@ export default function AdminDashboard() {
                   className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
                 />
               </Field>
-              <Field label="Max Tickets Per Family">
+              <Field label="Member max tickets">
                 <input
                   inputMode="numeric"
-                  value={draft.maxPerHousehold}
+                  value={draft.memberMaxPerHousehold}
                   onChange={(event) =>
                     setDraft((current) => ({
                       ...current,
-                      maxPerHousehold: event.target.value,
+                      memberMaxPerHousehold: event.target.value,
                     }))
                   }
                   className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
                 />
               </Field>
-              <Field label="Total Secret Stock">
+              <Field label="Guest max tickets">
                 <input
                   inputMode="numeric"
-                  value={draft.totalStock}
+                  value={draft.guestMaxPerHousehold}
                   onChange={(event) =>
                     setDraft((current) => ({
                       ...current,
-                      totalStock: event.target.value,
+                      guestMaxPerHousehold: event.target.value,
+                    }))
+                  }
+                  className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
+                />
+              </Field>
+              <Field label="Member Stock">
+                <input
+                  inputMode="numeric"
+                  value={draft.memberTotalStock}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      memberTotalStock: event.target.value,
+                    }))
+                  }
+                  className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
+                />
+              </Field>
+              <Field label="Guest Stock">
+                <input
+                  inputMode="numeric"
+                  value={draft.guestTotalStock}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      guestTotalStock: event.target.value,
                     }))
                   }
                   className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
@@ -542,7 +583,6 @@ export default function AdminDashboard() {
                 In this project folder, create{" "}
                 <span className="font-bold">.env.local</span> with
                 NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
-                You can also set NEXT_PUBLIC_ADMIN_PASSWORD.
               </li>
               <li>Stop the dev server and start it again with npm run dev.</li>
               <li>
@@ -711,87 +751,6 @@ function WhatsAppDeskSettings({ settings }: { settings: SystemSettings }) {
   );
 }
 
-function AdminSettings() {
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setMessage(null);
-    const result = await changeAdminPassword(current, next, confirm);
-    if (result) {
-      setError(result);
-      return;
-    }
-    setError(null);
-    setCurrent("");
-    setNext("");
-    setConfirm("");
-    setMessage("The admin password has been changed on this browser.");
-  }
-
-  return (
-    <form
-      onSubmit={onSubmit}
-      className="mt-8 max-w-xl rounded-2xl border-2 border-navy bg-white p-5"
-    >
-      <h2 className="text-2xl font-bold text-navy">Admin password</h2>
-      <p className="mt-2 text-lg leading-relaxed">
-        Change the password used by the admin login. A refresh keeps you
-        signed in until you press Logout.
-      </p>
-      <div className="mt-4 space-y-4">
-        <Field label="Current password">
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={current}
-            onChange={(event) => setCurrent(event.target.value)}
-            className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
-          />
-        </Field>
-        <Field label="New password">
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={next}
-            onChange={(event) => setNext(event.target.value)}
-            className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
-          />
-        </Field>
-        <Field label="Confirm new password">
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(event) => setConfirm(event.target.value)}
-            className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
-          />
-        </Field>
-      </div>
-      {error ? (
-        <p className="mt-4 rounded-lg bg-slate-100 p-3 text-base font-semibold" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {message ? (
-        <p className="mt-4 rounded-lg bg-emerald/10 p-3 text-base font-semibold" role="status">
-          {message}
-        </p>
-      ) : null}
-      <button
-        type="submit"
-        className="mt-5 inline-flex min-h-12 items-center justify-center rounded-lg bg-champions px-5 text-base font-bold text-white"
-      >
-        Save new password
-      </button>
-    </form>
-  );
-}
-
 function Field({
   label,
   children,
@@ -807,7 +766,75 @@ function Field({
   );
 }
 
-function AdminItemCard({
+function ProductInventoryTable({
+  items,
+  onUpdate,
+  onDelete,
+}: {
+  items: CatalogItem[];
+  onUpdate: (id: string, patch: Partial<CatalogItem>) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (items.length === 0) {
+    return (
+      <p className="rounded-xl border-2 border-navy bg-white p-4 text-sm font-semibold">
+        No Jubilee items yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-xl border-2 border-navy bg-white">
+      <table className="w-full min-w-[1080px] border-collapse text-left text-sm text-navy">
+        <thead>
+          <tr className="border-b border-navy/20 bg-slate-50 text-xs uppercase">
+            <th className="px-3 py-2 font-bold" rowSpan={2}>
+              Item
+            </th>
+            <th className="px-3 py-2 text-center font-bold" colSpan={4}>
+              Member
+            </th>
+            <th className="px-3 py-2 text-center font-bold" colSpan={4}>
+              Non-Member (Guest)
+            </th>
+            <th className="px-3 py-2 font-bold" rowSpan={2}>
+              Actions
+            </th>
+          </tr>
+          <tr className="border-b border-navy/20 bg-slate-50 text-xs">
+            {["Total", "Booked", "Left", "Max", "Total", "Booked", "Left", "Max"].map(
+              (label, index) => (
+                <th key={`${label}-${index}`} className="px-2 py-1 font-semibold">
+                  {label}
+                </th>
+              ),
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <ProductInventoryRows
+              key={item.id}
+              item={item}
+              onUpdate={(patch) => onUpdate(item.id, patch)}
+              onDelete={() => {
+                if (
+                  window.confirm(
+                    `Delete / Remove “${item.name}” from the catalog? This cannot be undone.`,
+                  )
+                ) {
+                  onDelete(item.id);
+                }
+              }}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ProductInventoryRows({
   item,
   onUpdate,
   onDelete,
@@ -816,219 +843,218 @@ function AdminItemCard({
   onUpdate: (patch: Partial<CatalogItem>) => void;
   onDelete: () => void;
 }) {
-  const percent =
-    item.totalStock === 0
-      ? 0
-      : Math.min(100, Math.round((item.bookedStock / item.totalStock) * 100));
-
   return (
-    <li className="rounded-2xl border-2 border-navy/15 bg-white p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-        <ItemVisual imageUrl={item.imageUrl} name={item.name} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-2xl font-bold text-navy">{item.name}</h2>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-base font-bold text-navy">
-              {item.category}
-            </span>
-            <span
-              className={
-                item.isActive
-                  ? "rounded-full bg-emerald px-3 py-1 text-base font-bold text-white"
-                  : "rounded-full bg-slate-700 px-3 py-1 text-base font-bold text-white"
-              }
-            >
-              {item.isActive ? "Showing on public portal" : "Hidden from public"}
-            </span>
-          </div>
-          <p className="mt-2 text-lg font-bold text-champions">
-            Public ticket fee now: {formatNaira(item.ticketPrice)}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <NumberField
-          label="Ticket Price / Fee (₦) [Shown to Public]"
-          value={item.ticketPrice}
-          min={0}
-          onCommit={(ticketPrice) => {
-            if (ticketPrice === "") return;
-            onUpdate({ ticketPrice });
-          }}
-        />
-        <NumberField
-          label="Post-Ticket Item Cost (₦) [Hidden Until Ticket Paid]"
-          value={item.subsidizedItemCost ?? ""}
-          min={0}
-          allowEmpty
-          onCommit={(subsidizedItemCost) =>
+    <Fragment>
+      <tr className="border-b border-slate-200 align-top">
+        <td className="px-3 py-2">
+          <p className="font-bold">{item.name}</p>
+          <p className="text-xs text-slate-600">{item.category}</p>
+          <label className="mt-1 block text-xs font-semibold">
+            Ticket fee ₦
+            <MiniNumber
+              label={`Ticket fee for ${item.name}`}
+              value={item.ticketPrice}
+              min={0}
+              onCommit={(ticketPrice) => onUpdate({ ticketPrice })}
+            />
+          </label>
+        </td>
+        <QuotaCells
+          tone="bg-champions"
+          total={item.memberTotalStock}
+          booked={item.memberBookedStock}
+          max={item.memberMaxPerHousehold}
+          totalLabel={`Member stock for ${item.name}`}
+          bookedLabel={`Member booked for ${item.name}`}
+          maxLabel={`Member max for ${item.name}`}
+          onTotal={(memberTotalStock) => onUpdate({ memberTotalStock })}
+          onBooked={(memberBookedStock) =>
             onUpdate({
-              subsidizedItemCost:
-                subsidizedItemCost === "" ? undefined : subsidizedItemCost,
+              memberBookedStock: Math.min(item.memberTotalStock, memberBookedStock),
             })
           }
-        />
-        <div>
-          <p className="mb-1 text-base font-bold text-navy">
-            Max Tickets Per Family
-          </p>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              aria-label={`Lower family limit for ${item.name}`}
-              onClick={() =>
-                onUpdate({
-                  maxPerHousehold: Math.max(1, item.maxPerHousehold - 1),
-                })
-              }
-              className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-navy text-2xl font-bold text-white"
-            >
-              −
-            </button>
-            <span className="min-w-8 text-center text-2xl font-bold">
-              {item.maxPerHousehold}
-            </span>
-            <button
-              type="button"
-              aria-label={`Raise family limit for ${item.name}`}
-              onClick={() =>
-                onUpdate({ maxPerHousehold: item.maxPerHousehold + 1 })
-              }
-              className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-navy text-2xl font-bold text-white"
-            >
-              +
-            </button>
-          </div>
-        </div>
-        <NumberField
-          label="Total Secret Stock"
-          value={item.totalStock}
-          min={0}
-          onCommit={(totalStock) => {
-            if (totalStock === "") return;
-            onUpdate({ totalStock });
-          }}
-        />
-      </div>
-
-      <div className="mt-5 rounded-2xl bg-slate-100 p-4">
-        <p className="text-base font-bold text-navy">
-          Secret stock — never shown to the public
-        </p>
-        <p className="mt-2 text-lg font-bold">
-          Booked {item.bookedStock} / Total stock {item.totalStock}
-        </p>
-        <div
-          className="mt-3 h-4 overflow-hidden rounded-full bg-white"
-          aria-hidden="true"
-        >
-          <div
-            className="h-full bg-champions"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-        <div className="mt-4 max-w-xs">
-          <NumberField
-            label="Booked so far (secret)"
-            value={item.bookedStock}
-            min={0}
-            onCommit={(bookedStock) => {
-              if (bookedStock === "") return;
-              onUpdate({ bookedStock });
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <ImagePicker
-          value={item.imageUrl}
-          onChange={(imageUrl) => onUpdate({ imageUrl })}
-        />
-      </div>
-
-      <label className="mt-5 flex min-h-12 items-center gap-3 text-base font-bold text-navy">
-        <input
-          type="checkbox"
-          checked={item.allowNonMembers !== false}
-          onChange={(event) =>
-            onUpdate({ allowNonMembers: event.target.checked })
+          onMax={(memberMaxPerHousehold) =>
+            onUpdate({ memberMaxPerHousehold, maxPerHousehold: memberMaxPerHousehold })
           }
-          className="h-6 w-6"
         />
-        Guests may book this item
-      </label>
-
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        <button
-          type="button"
-          onClick={() => onUpdate({ isActive: !item.isActive })}
-          className="inline-flex min-h-12 items-center justify-center rounded-lg border-2 border-navy bg-white px-5 text-base font-bold text-navy"
-        >
-          {item.isActive ? "Hide / Unavailable" : "Show on Public Portal"}
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="inline-flex min-h-12 items-center justify-center rounded-lg bg-red-800 px-5 text-base font-bold text-white"
-        >
-          Delete / Remove Item
-        </button>
-      </div>
-    </li>
+        <QuotaCells
+          tone="bg-navy"
+          total={item.guestTotalStock}
+          booked={item.guestBookedStock}
+          max={item.guestMaxPerHousehold}
+          totalLabel={`Guest stock for ${item.name}`}
+          bookedLabel={`Guest booked for ${item.name}`}
+          maxLabel={`Guest max for ${item.name}`}
+          onTotal={(guestTotalStock) => onUpdate({ guestTotalStock })}
+          onBooked={(guestBookedStock) =>
+            onUpdate({
+              guestBookedStock: Math.min(item.guestTotalStock, guestBookedStock),
+            })
+          }
+          onMax={(guestMaxPerHousehold) => onUpdate({ guestMaxPerHousehold })}
+        />
+        <td className="px-3 py-2">
+          <button
+            type="button"
+            onClick={() => onUpdate({ isActive: !item.isActive })}
+            className={
+              item.isActive
+                ? "rounded-full bg-emerald px-2 py-1 text-xs font-bold text-white"
+                : "rounded-full bg-slate-700 px-2 py-1 text-xs font-bold text-white"
+            }
+          >
+            {item.isActive ? "Public" : "Hidden"}
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="mt-2 block rounded bg-red-800 px-2 py-1 text-xs font-bold text-white"
+          >
+            Delete
+          </button>
+        </td>
+      </tr>
+      <tr className="border-b border-navy/15 bg-slate-50">
+        <td className="px-3 py-2" colSpan={10}>
+          <div className="flex flex-wrap items-center gap-3">
+            <ImagePicker
+              value={item.imageUrl}
+              onChange={(imageUrl) => onUpdate({ imageUrl })}
+            />
+            <label className="flex items-center gap-2 text-xs font-bold">
+              <input
+                type="checkbox"
+                checked={item.allowNonMembers !== false}
+                onChange={(event) =>
+                  onUpdate({ allowNonMembers: event.target.checked })
+                }
+                className="h-4 w-4"
+              />
+              Guests may book
+            </label>
+            <label className="text-xs font-semibold">
+              Hidden item cost ₦
+              <MiniNumber
+                label={`Hidden item cost for ${item.name}`}
+                value={item.subsidizedItemCost ?? 0}
+                min={0}
+                onCommit={(subsidizedItemCost) => onUpdate({ subsidizedItemCost })}
+              />
+            </label>
+          </div>
+        </td>
+      </tr>
+    </Fragment>
   );
 }
 
-function NumberField({
-  label,
+function QuotaCells({
+  total,
+  booked,
+  max,
+  tone,
+  totalLabel,
+  bookedLabel,
+  maxLabel,
+  onTotal,
+  onBooked,
+  onMax,
+}: {
+  total: number;
+  booked: number;
+  max: number;
+  tone: string;
+  totalLabel: string;
+  bookedLabel: string;
+  maxLabel: string;
+  onTotal: (value: number) => void;
+  onBooked: (value: number) => void;
+  onMax: (value: number) => void;
+}) {
+  const remaining = Math.max(0, total - booked);
+  const percent = total === 0 ? 0 : Math.min(100, Math.round((booked / total) * 100));
+  const pill =
+    remaining <= 0
+      ? "bg-red-800 text-white"
+      : total > 0 && remaining / total <= 0.25
+        ? "bg-amber-200 text-navy"
+        : "bg-emerald text-white";
+
+  return (
+    <>
+      <td className="px-2 py-2">
+        <MiniNumber label={totalLabel} value={total} min={0} onCommit={onTotal} />
+      </td>
+      <td className="px-2 py-2">
+        <MiniNumber
+          label={bookedLabel}
+          value={booked}
+          min={0}
+          max={total}
+          onCommit={onBooked}
+        />
+      </td>
+      <td className="px-2 py-2">
+        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${pill}`}>
+          {remaining} left
+        </span>
+        <div className="mt-1 h-1 w-16 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
+          <div className={`h-full ${tone}`} style={{ width: `${percent}%` }} />
+        </div>
+      </td>
+      <td className="px-2 py-2">
+        <MiniNumber label={maxLabel} value={max} min={1} onCommit={onMax} />
+      </td>
+    </>
+  );
+}
+
+function MiniNumber({
   value,
   min,
-  allowEmpty = false,
+  max,
+  label,
   onCommit,
 }: {
-  label: string;
-  value: number | "";
+  value: number;
   min: number;
-  allowEmpty?: boolean;
-  onCommit: (value: number | "") => void;
+  max?: number;
+  label: string;
+  onCommit: (value: number) => void;
 }) {
   const [text, setText] = useState(String(value));
   const [lastValue, setLastValue] = useState(value);
 
   if (value !== lastValue) {
     setLastValue(value);
-    setText(value === "" ? "" : String(value));
+    setText(String(value));
   }
 
   function commit(nextText: string) {
-    if (allowEmpty && nextText.trim() === "") {
-      onCommit("");
-      return;
-    }
     const parsed = Number(nextText);
     if (!Number.isFinite(parsed)) {
-      setText(value === "" ? "" : String(value));
+      setText(String(value));
       return;
     }
-    onCommit(Math.max(min, Math.round(parsed)));
+    let next = Math.max(min, Math.round(parsed));
+    if (max != null) next = Math.min(max, next);
+    setText(String(next));
+    if (next !== value) onCommit(next);
   }
 
   return (
-    <label className="block">
-      <span className="mb-1 block text-base font-bold text-navy">{label}</span>
-      <input
-        inputMode="numeric"
-        value={text}
-        onChange={(event) => {
-          const nextText = event.target.value;
-          setText(nextText);
-          if (allowEmpty && nextText.trim() === "") return;
-          if (/^\d+$/.test(nextText)) commit(nextText);
-        }}
-        onBlur={() => commit(text)}
-        className="min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
-      />
-    </label>
+    <input
+      aria-label={label}
+      inputMode="numeric"
+      value={text}
+      onChange={(event) => {
+        const nextText = event.target.value;
+        setText(nextText);
+        if (/^\d+$/.test(nextText)) commit(nextText);
+      }}
+      onBlur={() => commit(text)}
+      className="h-8 w-16 rounded border border-navy px-2 text-sm"
+    />
   );
 }
+

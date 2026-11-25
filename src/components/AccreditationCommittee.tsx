@@ -1,77 +1,51 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   accreditHousehold,
   extendHouseholdWindow,
+  compactBookingsCsv,
   formatNaira,
-  groupHouseholds,
   holdRemaining,
   householdVettingNotes,
+  markTicketsPaidAndIssued,
   rejectOrExpireHousehold,
   releaseAllExpiredBookings,
-  simulateHouseholdExpiry,
-  statusLabel,
-  type CommitteeGroupMode,
   type HouseholdBooking,
+  type HouseholdCategory,
+  type HouseholdStatus,
 } from "@/lib/catalogStore";
 
-type ReviewFilter =
-  | "all"
-  | "pending"
-  | "flagged"
-  | "member"
-  | "guest"
-  | "accredited"
-  | "paid"
-  | "closed";
+type CategoryFilter = "all" | HouseholdCategory;
+type StatusFilter = "all" | "pending" | "accredited" | "paid" | "closed";
 
-const FILTERS: { id: ReviewFilter; label: string }[] = [
+const CATEGORY_FILTERS: { id: CategoryFilter; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "pending", label: "Pending Review" },
-  { id: "flagged", label: "⚠️ Flagged Duplicates" },
-  { id: "member", label: "Church Members" },
-  { id: "guest", label: "Non-Members (Guests)" },
-  { id: "accredited", label: "Accredited" },
-  { id: "paid", label: "Paid & Issued" },
-  { id: "closed", label: "Rejected/Expired" },
+  { id: "MEMBER", label: "Member" },
+  { id: "GUEST", label: "Guest" },
 ];
 
-function holdsStock(booking: HouseholdBooking) {
-  return (
-    booking.status === "PENDING_VERIFICATION" || booking.status === "ACCREDITED"
-  );
-}
+const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "pending", label: "Pending" },
+  { id: "accredited", label: "Accredited" },
+  { id: "paid", label: "Paid" },
+  { id: "closed", label: "Rejected/Expired" },
+];
 
 function matchesSearch(booking: HouseholdBooking, query: string) {
   const needle = query.trim().toLowerCase().replace(/^#/, "");
   if (!needle) return true;
-  return [
-    booking.referenceCode,
-    booking.fullName,
-    booking.whatsappNumber,
-    booking.homeAddress,
-    booking.churchUnitOrReferee,
-  ]
+  return [booking.referenceCode, booking.fullName, booking.whatsappNumber]
     .join(" ")
     .toLowerCase()
     .includes(needle);
 }
 
-function matchesFilter(
-  booking: HouseholdBooking,
-  filter: ReviewFilter,
-  flagged: boolean,
-) {
+function matchesStatus(booking: HouseholdBooking, filter: StatusFilter) {
   switch (filter) {
     case "pending":
       return booking.status === "PENDING_VERIFICATION";
-    case "flagged":
-      return flagged;
-    case "member":
-      return booking.category === "MEMBER";
-    case "guest":
-      return booking.category === "GUEST";
     case "accredited":
       return booking.status === "ACCREDITED";
     case "paid":
@@ -83,6 +57,53 @@ function matchesFilter(
   }
 }
 
+function statusPill(status: HouseholdStatus) {
+  switch (status) {
+    case "PENDING_VERIFICATION":
+      return "bg-amber-200 text-navy";
+    case "ACCREDITED":
+      return "bg-emerald text-white";
+    case "PAID_ISSUED":
+      return "bg-navy text-white";
+    case "EXPIRED":
+      return "bg-slate-600 text-white";
+    case "REJECTED":
+      return "bg-red-800 text-white";
+  }
+}
+
+function downloadFilteredBookingsCsv(households: HouseholdBooking[]) {
+  const csv = compactBookingsCsv(households);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const now = new Date();
+  const stamp = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+  link.href = url;
+  link.download = `canaan-jubilee-bookings-${stamp}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function shortStatus(status: HouseholdStatus) {
+  switch (status) {
+    case "PENDING_VERIFICATION":
+      return "Pending";
+    case "ACCREDITED":
+      return "Accredited";
+    case "PAID_ISSUED":
+      return "Paid";
+    case "EXPIRED":
+      return "Expired";
+    case "REJECTED":
+      return "Rejected";
+  }
+}
+
 export function AccreditationCommittee({
   households,
   batches,
@@ -91,9 +112,8 @@ export function AccreditationCommittee({
   batches: string[];
 }) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<ReviewFilter>("all");
-  const [groupMode, setGroupMode] = useState<CommitteeGroupMode>("none");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [category, setCategory] = useState<CategoryFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState<number | null>(null);
 
@@ -110,38 +130,18 @@ export function AccreditationCommittee({
     (booking) => booking.status === "PENDING_VERIFICATION",
   ).length;
   const accredited = households.filter((booking) => booking.status === "ACCREDITED").length;
-  const flagged = households.filter(
-    (booking) => householdVettingNotes(booking, households).red.length > 0,
-  ).length;
-  const overdue = households.filter(
-    (booking) =>
-      now != null &&
-      holdsStock(booking) &&
-      new Date(booking.expiresAt).getTime() < now,
-  );
+  const paid = households.filter((booking) => booking.status === "PAID_ISSUED").length;
 
   const visible = useMemo(
     () =>
-      households.filter((booking) => {
-        const notes = householdVettingNotes(booking, households);
-        return (
+      households.filter(
+        (booking) =>
           matchesSearch(booking, query) &&
-          matchesFilter(booking, filter, notes.red.length > 0)
-        );
-      }),
-    [filter, households, query],
+          (category === "all" || booking.category === category) &&
+          matchesStatus(booking, status),
+      ),
+    [category, households, query, status],
   );
-  const groups = groupHouseholds(visible, groupMode);
-
-  function simulateSelected() {
-    if (!selectedId) return;
-    const next = simulateHouseholdExpiry(selectedId);
-    setNotice(
-      next
-        ? `#${next.referenceCode} is now past the confirmation window. Release all expired stock to return the tickets.`
-        : "Select a pending or accredited booking before simulating expiry.",
-    );
-  }
 
   function releaseExpired() {
     const released = releaseAllExpiredBookings();
@@ -153,194 +153,203 @@ export function AccreditationCommittee({
   }
 
   return (
-    <section className="mt-8">
-      <h2 className="text-2xl font-bold text-navy">
-        🛡️ Household Accreditation &amp; Vetting
-      </h2>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <SummaryCard
-          title="Households registered"
-          value={`${households.length}`}
-          detail={`${members} church members · ${guests} non-member guests`}
-        />
-        <SummaryCard title="Pending accreditation" value={`${pending}`} detail="Waiting for committee review" />
-        <SummaryCard title="Accredited passes" value={`${accredited}`} detail="Ready for ticket payment" />
-        <SummaryCard title="Suspicious flags" value={`${flagged}`} detail="Device, address, or referee matches" />
-        <SummaryCard
-          title="Expired past the window"
-          value={`${overdue.length}`}
-          detail="Still holding hidden stock"
-        />
-      </div>
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+    <section className="mt-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-bold text-navy">Bookings</h2>
         <button
           type="button"
           onClick={releaseExpired}
-          className="inline-flex min-h-12 items-center justify-center rounded-lg bg-navy px-5 text-base font-bold text-white"
+          className="inline-flex h-8 items-center rounded-lg border border-navy px-3 text-xs font-bold text-navy"
         >
-          Release All Expired Stock
-        </button>
-        <button
-          type="button"
-          disabled={!selectedId}
-          onClick={simulateSelected}
-          className="inline-flex min-h-12 items-center justify-center rounded-lg border-2 border-navy bg-white px-5 text-base font-bold text-navy disabled:border-slate-300 disabled:text-slate-500"
-        >
-          Simulate 72h Expiry on Selected Booking
+          Release expired stock
         </button>
       </div>
+
+      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+        <Metric label="Total Bookings" value={String(households.length)} />
+        <Metric label="Members vs Guests" value={`${members} / ${guests}`} />
+        <Metric label="Pending" value={String(pending)} />
+        <Metric label="Accredited" value={String(accredited)} />
+        <Metric label="Paid/Issued" value={String(paid)} />
+      </div>
+
       {notice ? (
-        <p className="mt-4 rounded-lg bg-slate-100 p-4 text-lg font-semibold" role="status">
+        <p className="mt-2 rounded bg-slate-100 px-3 py-2 text-xs font-semibold" role="status">
           {notice}
         </p>
       ) : null}
 
-      <div className="mt-6 rounded-2xl border-2 border-navy bg-white p-4">
-        <label className="block text-base font-bold text-navy" htmlFor="committee-search">
-          Search households
+      <div className="mt-3 flex flex-col gap-2 rounded-lg border border-navy/20 bg-white p-2 lg:flex-row lg:items-center">
+        <label className="min-w-0 flex-1 text-xs font-bold text-navy" htmlFor="committee-search">
+          <span className="sr-only">Search bookings</span>
+          <input
+            id="committee-search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Code, name, or WhatsApp"
+            className="h-8 w-full rounded border border-navy px-2 text-sm"
+          />
         </label>
-        <input
-          id="committee-search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Reference, name, WhatsApp, address, or leader"
-          className="mt-2 min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
+        <FilterGroup
+          label="Category"
+          options={CATEGORY_FILTERS}
+          value={category}
+          onChange={setCategory}
         />
-        <div className="mt-4 flex flex-wrap gap-2">
-          {FILTERS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              aria-pressed={filter === item.id}
-              onClick={() => setFilter(item.id)}
-              className={
-                filter === item.id
-                  ? "inline-flex min-h-10 items-center rounded-full bg-navy px-4 text-base font-bold text-white"
-                  : "inline-flex min-h-10 items-center rounded-full border-2 border-navy bg-white px-4 text-base font-bold text-navy"
-              }
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <label className="mt-4 block text-base font-bold text-navy" htmlFor="committee-group">
-          Group by
-        </label>
-        <select
-          id="committee-group"
-          value={groupMode}
-          onChange={(event) => setGroupMode(event.target.value as CommitteeGroupMode)}
-          className="mt-2 min-h-12 w-full rounded-lg border-2 border-navy bg-white px-3 text-lg"
+        <FilterGroup
+          label="Status"
+          options={STATUS_FILTERS}
+          value={status}
+          onChange={setStatus}
+        />
+        <button
+          type="button"
+          disabled={visible.length === 0}
+          onClick={() => downloadFilteredBookingsCsv(visible)}
+          className="inline-flex h-8 shrink-0 items-center rounded-lg border border-navy px-3 text-xs font-bold text-navy disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
         >
-          <option value="none">No Grouping (Newest First)</option>
-          <option value="surname">
-            Group by Surname (Compare Addresses &amp; Unit Leaders side-by-side)
-          </option>
-          <option value="anchor">
-            Group by Church Unit / Member Referee (Spot multiple people using the same Referee)
-          </option>
-          <option value="address">Group by Home Street Address / Device Hash</option>
-        </select>
+          Export CSV ({visible.length})
+        </button>
       </div>
 
-      {groups.every((group) => group.bookings.length === 0) ? (
-        <p className="mt-6 rounded-2xl border-2 border-navy bg-white p-5 text-lg font-semibold">
-          No households match this search.
-        </p>
-      ) : (
-        groups.map((group) => (
-          <div key={group.title || "all"} className="mt-6">
-            {group.title ? (
-              <h3 className="text-xl font-bold text-navy">{group.title}</h3>
-            ) : null}
-            <ul className="mt-3 space-y-5">
-              {group.bookings.map((booking) => (
-                <VettingCard
+      <div className="mt-3 overflow-x-auto rounded-lg border border-navy/20 bg-white">
+        <table className="w-full min-w-[980px] border-collapse text-left text-sm text-navy">
+          <thead>
+            <tr className="border-b border-navy/15 bg-slate-50 text-xs uppercase">
+              <th className="px-3 py-2 font-bold">Code</th>
+              <th className="px-3 py-2 font-bold">Household</th>
+              <th className="px-3 py-2 font-bold">Type</th>
+              <th className="px-3 py-2 font-bold">Items</th>
+              <th className="px-3 py-2 font-bold">Status</th>
+              <th className="px-3 py-2 font-bold">Batch / Time</th>
+              <th className="px-3 py-2 font-bold">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.length === 0 ? (
+              <tr>
+                <td className="px-3 py-3 text-xs font-semibold" colSpan={7}>
+                  No households match this search.
+                </td>
+              </tr>
+            ) : (
+              visible.map((booking) => (
+                <BookingRow
                   key={booking.id}
                   booking={booking}
                   households={households}
                   batches={batches}
-                  selected={selectedId === booking.id}
-                  onSelect={() => setSelectedId(booking.id)}
+                  now={now}
                 />
-              ))}
-            </ul>
-          </div>
-        ))
-      )}
-
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
 
-function SummaryCard({
-  title,
-  value,
-  detail,
-}: {
-  title: string;
-  value: string;
-  detail: string;
-}) {
+function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <article className="rounded-2xl border-2 border-navy bg-white p-4">
-      <p className="text-sm font-bold tracking-wide text-champions uppercase">{title}</p>
-      <p className="mt-1 text-3xl font-bold text-navy">{value}</p>
-      <p className="mt-1 text-base leading-snug">{detail}</p>
-    </article>
+    <p className="inline-flex items-center gap-2 rounded-full border border-navy/20 bg-white px-3 py-1">
+      <span className="font-semibold text-slate-600">{label}</span>
+      <span className="font-bold text-navy">{value}</span>
+    </p>
   );
 }
 
-function VettingCard({
+function FilterGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { id: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          aria-pressed={value === option.id}
+          onClick={() => onChange(option.id)}
+          className={
+            value === option.id
+              ? "h-8 rounded-full bg-navy px-3 text-xs font-bold text-white"
+              : "h-8 rounded-full border border-navy px-3 text-xs font-bold text-navy"
+          }
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BookingRow({
   booking,
   households,
   batches,
-  selected,
-  onSelect,
+  now,
 }: {
   booking: HouseholdBooking;
   households: HouseholdBooking[];
   batches: string[];
-  selected: boolean;
-  onSelect: () => void;
+  now: number | null;
 }) {
   const notes = householdVettingNotes(booking, households);
+  const [open, setOpen] = useState(false);
   const [batch, setBatch] = useState(booking.pickupBatch || batches[0] || "");
   const [reason, setReason] = useState("");
-  const [notifyUrl, setNotifyUrl] = useState<string | null>(null);
-  const [passUrl, setPassUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const items = booking.items
+    .map((line) => `${line.quantity}× ${line.productName}`)
+    .join(", ");
+  const timeLeft =
+    booking.status === "PENDING_VERIFICATION" || booking.status === "ACCREDITED"
+      ? holdRemaining(booking.expiresAt, now ?? Date.now())
+      : "";
 
   async function approve() {
     if (saving) return;
     setSaving(true);
-    setNotifyUrl(null);
-    setPassUrl(null);
+    setLink(null);
     try {
       const result = await accreditHousehold(booking.id, batch, "");
       if (!result) {
-        const text = "This booking could not be accredited.";
-        setMessage(text);
-        window.alert(text);
+        setMessage("This booking could not be accredited.");
         return;
       }
-      setMessage(
-        `#${result.booking.referenceCode} is accredited for ${result.booking.pickupBatch}.`,
-      );
+      setMessage(`#${result.booking.referenceCode} is accredited.`);
       if (!result.whatsappUrl) return;
       const opened = window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
-      if (!opened) setPassUrl(result.whatsappUrl);
+      if (!opened) setLink(result.whatsappUrl);
     } catch (error) {
-      const text =
+      setMessage(
         error instanceof Error && error.message
           ? error.message
-          : "Accreditation could not be saved.";
-      setMessage(text);
-      window.alert(text);
+          : "Accreditation could not be saved.",
+      );
     } finally {
       setSaving(false);
     }
+  }
+
+  function markPaid() {
+    const result = markTicketsPaidAndIssued(booking.id, "CASH", "Admin desk");
+    if (!result) {
+      setMessage("Only an accredited booking can be marked paid.");
+      return;
+    }
+    setMessage(`#${result.booking.referenceCode} is marked paid.`);
+    if (result.whatsappUrl) setLink(result.whatsappUrl);
   }
 
   function reject() {
@@ -349,211 +358,160 @@ function VettingCard({
       "REJECTED",
       reason.trim() || "Duplicate registration from same household",
     );
-    if (!result) {
-      setMessage("Only a pending or accredited booking can return stock.");
-      return;
-    }
-    setNotifyUrl(result.whatsappUrl);
-    setMessage(`#${result.booking.referenceCode} was rejected and its tickets returned to stock.`);
-  }
-
-  function expireNow() {
-    const result = rejectOrExpireHousehold(
-      booking.id,
-      "EXPIRED",
-      "Committee test expiry.",
+    setMessage(
+      result
+        ? `#${result.booking.referenceCode} was rejected and its tickets returned to stock.`
+        : "Only a pending or accredited booking can return stock.",
     );
-    if (!result) {
-      setMessage("Only a pending or accredited booking can be expired.");
-      return;
-    }
-    setNotifyUrl(null);
-    setMessage(`#${result.booking.referenceCode} expired and its tickets returned to stock.`);
+    if (result?.whatsappUrl) setLink(result.whatsappUrl);
   }
 
   return (
-    <li
-      className={
-        selected
-          ? "rounded-2xl border-4 border-champions bg-white p-5"
-          : "rounded-2xl border-2 border-navy bg-white p-5"
-      }
-    >
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-2xl font-bold text-navy">{booking.fullName}</h3>
-            <span className="inline-flex min-h-10 items-center rounded-full bg-navy px-4 text-base font-bold text-white">
-              {booking.category === "MEMBER" ? "⛪ Church Member" : "🤝 Non-Member Guest"}
-            </span>
-          </div>
-          <p className="mt-1 text-xl font-bold text-champions">#{booking.referenceCode}</p>
-          <p className="mt-1 text-base font-semibold">{statusLabel(booking.status)}</p>
-          <p
+    <Fragment>
+      <tr className="border-b border-slate-100 align-top">
+        <td className="px-3 py-2 font-mono text-xs font-bold">#{booking.referenceCode}</td>
+        <td className="px-3 py-2">
+          <p className="font-semibold">{booking.fullName}</p>
+          <p className="text-xs text-slate-500">{booking.whatsappNumber}</p>
+        </td>
+        <td className="px-3 py-2">
+          <span
             className={
-              booking.whatsappInitiated
-                ? "mt-2 inline-flex min-h-10 items-center rounded-full bg-emerald px-4 text-base font-bold text-white"
-                : "mt-2 inline-flex min-h-10 items-center rounded-full bg-amber-100 px-4 text-base font-bold text-navy"
+              booking.category === "MEMBER"
+                ? "inline-flex rounded-full bg-navy px-2 py-0.5 text-xs font-bold text-white"
+                : "inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-xs font-bold text-navy"
             }
           >
-            {booking.whatsappInitiated
-              ? "✅ WhatsApp Initiated"
-              : "⏳ Awaiting WhatsApp Click"}
-          </p>
-          <HoldLine expiresAt={booking.expiresAt} />
-        </div>
-        <button
-          type="button"
-          aria-pressed={selected}
-          onClick={onSelect}
-          className="inline-flex h-12 items-center justify-center self-start rounded-lg border-2 border-navy px-4 text-base font-bold text-navy"
-        >
-          {selected ? "Selected" : "Select"}
-        </button>
-      </div>
-
-      <dl className="mt-4 grid gap-3 text-base sm:grid-cols-2">
-        <div>
-          <dt className="font-bold text-navy">WhatsApp</dt>
-          <dd>{booking.whatsappNumber}</dd>
-        </div>
-        <div>
-          <dt className="font-bold text-navy">Street address</dt>
-          <dd>{booking.homeAddress}</dd>
-        </div>
-        <div>
-          <dt className="font-bold text-navy">Unit leader / member referee</dt>
-          <dd>{booking.churchUnitOrReferee}</dd>
-        </div>
-      </dl>
-
-      {notes.red.length > 0 ? (
-        <ul className="mt-4 space-y-2">
-          {notes.red.map((flag) => (
-            <li key={flag} className="rounded-lg bg-red-800 px-3 py-2 text-base font-bold text-white">
-              {flag}
-            </li>
-          ))}
-        </ul>
-      ) : notes.surnameOthers > 0 ? (
-        <p className="mt-4 rounded-lg bg-champions px-3 py-2 text-base font-bold text-white">
-          ℹ️ Shares surname with {notes.surnameOthers} other household
-          {notes.surnameOthers === 1 ? "" : "s"} — verify distinct address &amp; Unit
-          Leader before approving.
-        </p>
+            {booking.category === "MEMBER" ? "Member" : "Guest"}
+          </span>
+        </td>
+        <td className="px-3 py-2 text-xs">
+          <p>{items || "No items"}</p>
+          <p className="font-bold">{formatNaira(booking.totalTicketFee)}</p>
+        </td>
+        <td className="px-3 py-2">
+          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${statusPill(booking.status)}`}>
+            {shortStatus(booking.status)}
+          </span>
+        </td>
+        <td className="px-3 py-2 text-xs">
+          <p>{booking.pickupBatch || "No batch"}</p>
+          {timeLeft ? <p className="text-slate-500">{timeLeft}</p> : null}
+        </td>
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap gap-1">
+            {booking.status === "PENDING_VERIFICATION" ? (
+              <button
+                type="button"
+                onClick={() => void approve()}
+                disabled={saving}
+                className="rounded bg-emerald px-2 py-1 text-xs font-bold text-white disabled:bg-slate-300"
+              >
+                {saving ? "Saving…" : "Approve & WhatsApp"}
+              </button>
+            ) : null}
+            {booking.status === "ACCREDITED" ? (
+              <button
+                type="button"
+                onClick={markPaid}
+                className="rounded bg-navy px-2 py-1 text-xs font-bold text-white"
+              >
+                Mark Paid
+              </button>
+            ) : null}
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen((current) => !current)}
+              className="rounded border border-navy px-2 py-1 text-xs font-bold"
+            >
+              {open ? "Hide" : "Details"}
+            </button>
+          </div>
+          {message ? <p className="mt-1 text-xs font-semibold">{message}</p> : null}
+          {link ? (
+            <a
+              href={link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 block text-xs font-bold text-emerald"
+            >
+              Open WhatsApp
+            </a>
+          ) : null}
+        </td>
+      </tr>
+      {open ? (
+        <tr className="border-b border-navy/10 bg-slate-50">
+          <td className="px-3 py-2 text-xs" colSpan={7}>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <p>
+                <span className="font-bold">Address: </span>
+                {booking.homeAddress || "—"}
+              </p>
+              <p>
+                <span className="font-bold">Unit / referee: </span>
+                {booking.churchUnitOrReferee || "—"}
+              </p>
+            </div>
+            {notes.red.length > 0 ? (
+              <ul className="mt-2 space-y-1">
+                {notes.red.map((flag) => (
+                  <li key={flag} className="rounded bg-red-800 px-2 py-1 font-bold text-white">
+                    {flag}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              <label className="text-xs font-bold">
+                Pickup batch
+                <select
+                  value={batch}
+                  onChange={(event) => setBatch(event.target.value)}
+                  className="mt-1 block h-8 rounded border border-navy bg-white px-2 text-sm"
+                >
+                  {batches.map((entry) => (
+                    <option key={entry} value={entry}>
+                      {entry}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = extendHouseholdWindow(booking.id, 24);
+                  setMessage(
+                    next
+                      ? `#${next.referenceCode} window extended by 24 hours.`
+                      : "This window could not be extended.",
+                  );
+                }}
+                className="h-8 rounded border border-navy px-2 text-xs font-bold"
+              >
+                +24h
+              </button>
+              <label className="min-w-48 flex-1 text-xs font-bold">
+                Rejection reason
+                <input
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  placeholder="Duplicate registration"
+                  className="mt-1 h-8 w-full rounded border border-navy px-2 text-sm font-normal"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={reject}
+                className="h-8 rounded bg-red-800 px-2 text-xs font-bold text-white"
+              >
+                Reject
+              </button>
+            </div>
+          </td>
+        </tr>
       ) : null}
-
-      <ul className="mt-4 space-y-1 text-lg">
-        {booking.items.map((line) => (
-          <li key={line.productId}>
-            {line.productName} × {line.quantity} ={" "}
-            {formatNaira(line.quantity * line.ticketUnitPrice)}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2 text-xl font-bold text-navy">
-        Total Ticket Fee: {formatNaira(booking.totalTicketFee)}
-      </p>
-
-      <div className="mt-4 grid gap-3">
-        <label className="block text-base font-bold text-navy">
-          Pickup batch
-          <select
-            value={batch}
-            onChange={(event) => setBatch(event.target.value)}
-            className="mt-1 min-h-12 w-full rounded-lg border-2 border-navy bg-white px-3 text-lg"
-          >
-            {batches.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex flex-col gap-3 lg:flex-row">
-          <button
-            type="button"
-            onClick={approve}
-            disabled={saving}
-            className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg bg-emerald px-4 text-base font-bold text-white disabled:bg-slate-300 disabled:text-slate-700"
-          >
-            {saving ? "Saving accreditation…" : "🟢 Approve & Send WhatsApp Pass"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const next = extendHouseholdWindow(booking.id, 24);
-              setMessage(
-                next
-                  ? `#${next.referenceCode} window extended by 24 hours.`
-                  : "This window could not be extended.",
-              );
-            }}
-            className="inline-flex min-h-12 items-center justify-center rounded-lg border-2 border-navy px-4 text-base font-bold text-navy"
-          >
-            ⏱️ +24h Extend
-          </button>
-          <button
-            type="button"
-            onClick={expireNow}
-            className="inline-flex min-h-12 items-center justify-center rounded-lg border-2 border-navy px-4 text-base font-bold text-navy"
-          >
-            Test Expire Now
-          </button>
-        </div>
-        <label className="block text-base font-bold text-navy">
-          Rejection reason
-          <input
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            placeholder="Duplicate registration from same household"
-            className="mt-1 min-h-12 w-full rounded-lg border-2 border-navy px-3 text-lg"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={reject}
-          className="inline-flex min-h-12 items-center justify-center rounded-lg bg-red-800 px-4 text-base font-bold text-white"
-        >
-          🔴 Reject Duplicate / Cancel (Return Stock)
-        </button>
-        {passUrl ? (
-          <a
-            href={passUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-12 items-center justify-center rounded-lg border-2 border-emerald px-4 text-base font-bold text-emerald"
-          >
-            Send WhatsApp pass
-          </a>
-        ) : null}
-        {notifyUrl ? (
-          <a
-            href={notifyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-12 items-center justify-center rounded-lg border-2 border-emerald px-4 text-base font-bold text-emerald"
-          >
-            Send polite WhatsApp notice
-          </a>
-        ) : null}
-        {message ? (
-          <p className="rounded-lg bg-slate-100 p-3 text-base font-semibold" role="status">
-            {message}
-          </p>
-        ) : null}
-      </div>
-    </li>
+    </Fragment>
   );
-}
-
-function HoldLine({ expiresAt }: { expiresAt: string }) {
-  const [label, setLabel] = useState(() => holdRemaining(expiresAt));
-
-  useEffect(() => {
-    const id = window.setInterval(() => setLabel(holdRemaining(expiresAt)), 1000);
-    return () => window.clearInterval(id);
-  }, [expiresAt]);
-
-  return <p className="mt-2 text-base font-semibold">{label}</p>;
 }

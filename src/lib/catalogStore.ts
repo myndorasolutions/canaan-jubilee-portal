@@ -48,11 +48,18 @@ export type CatalogItem = {
    * Never copy this onto a booking, slip, lookup, or WhatsApp message.
    */
   subsidizedItemCost?: number;
+  /** Member ticket cap. Also mirrored in maxPerHousehold for older reads. */
   maxPerHousehold: number;
-  /** Secret. Admin only. */
-  totalStock: number;
-  /** Secret. Admin only. */
-  bookedStock: number;
+  memberMaxPerHousehold: number;
+  guestMaxPerHousehold: number;
+  /** Secret member quota. Admin only. */
+  memberTotalStock: number;
+  /** Secret member reservations. Admin only. */
+  memberBookedStock: number;
+  /** Secret guest quota. Admin only. */
+  guestTotalStock: number;
+  /** Secret guest reservations. Admin only. */
+  guestBookedStock: number;
   isActive: boolean;
   imageUrl: string;
   /** When false, guests cannot book this item. Defaults to allowed. */
@@ -70,8 +77,11 @@ export type PublicCatalogItem = {
   category: string;
   ticketPrice: number;
   maxPerHousehold: number;
+  memberMaxPerHousehold: number;
+  guestMaxPerHousehold: number;
   imageUrl: string;
-  isAvailable: boolean;
+  isAvailableMember: boolean;
+  isAvailableGuest: boolean;
   /** When false, guests cannot select this item. */
   allowNonMembers: boolean;
 };
@@ -160,8 +170,12 @@ const SEED_ITEMS: CatalogItem[] = [
     ticketPrice: 2000,
     subsidizedItemCost: 42500,
     maxPerHousehold: 1,
-    totalStock: 40,
-    bookedStock: 8,
+    memberMaxPerHousehold: 1,
+    guestMaxPerHousehold: 1,
+    memberTotalStock: 40,
+    memberBookedStock: 8,
+    guestTotalStock: 0,
+    guestBookedStock: 0,
     isActive: true,
     imageUrl: "icon:wheat",
   },
@@ -172,8 +186,12 @@ const SEED_ITEMS: CatalogItem[] = [
     ticketPrice: 1000,
     subsidizedItemCost: 9000,
     maxPerHousehold: 2,
-    totalStock: 30,
-    bookedStock: 4,
+    memberMaxPerHousehold: 2,
+    guestMaxPerHousehold: 2,
+    memberTotalStock: 30,
+    memberBookedStock: 4,
+    guestTotalStock: 0,
+    guestBookedStock: 0,
     isActive: true,
     imageUrl: "icon:bean",
   },
@@ -184,8 +202,12 @@ const SEED_ITEMS: CatalogItem[] = [
     ticketPrice: 1500,
     subsidizedItemCost: 8000,
     maxPerHousehold: 1,
-    totalStock: 25,
-    bookedStock: 25,
+    memberMaxPerHousehold: 1,
+    guestMaxPerHousehold: 1,
+    memberTotalStock: 25,
+    memberBookedStock: 25,
+    guestTotalStock: 0,
+    guestBookedStock: 0,
     isActive: true,
     imageUrl: "icon:droplets",
   },
@@ -196,8 +218,12 @@ const SEED_ITEMS: CatalogItem[] = [
     ticketPrice: 500,
     subsidizedItemCost: 4500,
     maxPerHousehold: 2,
-    totalStock: 50,
-    bookedStock: 6,
+    memberMaxPerHousehold: 2,
+    guestMaxPerHousehold: 2,
+    memberTotalStock: 50,
+    memberBookedStock: 6,
+    guestTotalStock: 0,
+    guestBookedStock: 0,
     isActive: true,
     imageUrl: "icon:package",
   },
@@ -208,8 +234,12 @@ const SEED_ITEMS: CatalogItem[] = [
     ticketPrice: 2500,
     subsidizedItemCost: 6500,
     maxPerHousehold: 1,
-    totalStock: 18,
-    bookedStock: 3,
+    memberMaxPerHousehold: 1,
+    guestMaxPerHousehold: 1,
+    memberTotalStock: 18,
+    memberBookedStock: 3,
+    guestTotalStock: 0,
+    guestBookedStock: 0,
     isActive: true,
     imageUrl: "icon:drumstick",
   },
@@ -220,8 +250,12 @@ const SEED_ITEMS: CatalogItem[] = [
     ticketPrice: 800,
     subsidizedItemCost: 7500,
     maxPerHousehold: 1,
-    totalStock: 35,
-    bookedStock: 10,
+    memberMaxPerHousehold: 1,
+    guestMaxPerHousehold: 1,
+    memberTotalStock: 35,
+    memberBookedStock: 10,
+    guestTotalStock: 0,
+    guestBookedStock: 0,
     isActive: true,
     imageUrl: "icon:basket",
   },
@@ -252,19 +286,51 @@ function sanitize(value: unknown): CatalogState | null {
   const items: CatalogItem[] = [];
   for (const entry of record.items) {
     if (!entry || typeof entry !== "object") continue;
-    const item = entry as Partial<CatalogItem>;
+    const item = entry as Partial<CatalogItem> & {
+      totalStock?: number;
+      bookedStock?: number;
+    };
     if (typeof item.id !== "string" || typeof item.name !== "string") continue;
 
-    const totalStock = Math.max(0, Math.round(Number(item.totalStock) || 0));
-    const bookedStock = Math.min(
-      totalStock,
-      Math.max(0, Math.round(Number(item.bookedStock) || 0)),
+    const hasSplitStock =
+      typeof item.memberTotalStock === "number" ||
+      typeof item.guestTotalStock === "number";
+    const memberTotalStock = Math.max(
+      0,
+      Math.round(
+        Number(hasSplitStock ? item.memberTotalStock : item.totalStock) || 0,
+      ),
+    );
+    const memberBookedStock = Math.min(
+      memberTotalStock,
+      Math.max(
+        0,
+        Math.round(
+          Number(hasSplitStock ? item.memberBookedStock : item.bookedStock) || 0,
+        ),
+      ),
+    );
+    const guestTotalStock = hasSplitStock
+      ? Math.max(0, Math.round(Number(item.guestTotalStock) || 0))
+      : 0;
+    const guestBookedStock = Math.min(
+      guestTotalStock,
+      Math.max(0, Math.round(Number(hasSplitStock ? item.guestBookedStock : 0) || 0)),
     );
     const rawCost = item.subsidizedItemCost;
     const subsidizedItemCost =
       rawCost == null || rawCost === ("" as unknown)
         ? undefined
         : toMoney(Number(rawCost));
+    const sharedMax = Math.max(1, Math.round(Number(item.maxPerHousehold) || 1));
+    const memberMaxPerHousehold = Math.max(
+      1,
+      Math.round(Number(item.memberMaxPerHousehold) || sharedMax),
+    );
+    const guestMaxPerHousehold = Math.max(
+      1,
+      Math.round(Number(item.guestMaxPerHousehold) || sharedMax),
+    );
 
     items.push({
       id: item.id,
@@ -275,9 +341,13 @@ function sanitize(value: unknown): CatalogState | null {
           : "Household Items",
       ticketPrice: toMoney(Number(item.ticketPrice)),
       subsidizedItemCost,
-      maxPerHousehold: Math.max(1, Math.round(Number(item.maxPerHousehold) || 1)),
-      totalStock,
-      bookedStock,
+      maxPerHousehold: memberMaxPerHousehold,
+      memberMaxPerHousehold,
+      guestMaxPerHousehold,
+      memberTotalStock,
+      memberBookedStock,
+      guestTotalStock,
+      guestBookedStock,
       isActive: item.isActive !== false,
       allowNonMembers: item.allowNonMembers !== false,
       imageUrl:
@@ -448,9 +518,13 @@ type ProductRow = {
   image_url: string | null;
   ticket_price: number | string;
   subsidized_item_cost: number | string | null;
-  total_stock: number;
-  booked_stock: number;
+  member_total_stock: number;
+  member_booked_stock: number;
+  guest_total_stock: number;
+  guest_booked_stock: number;
   max_per_household: number;
+  member_max_per_household?: number | null;
+  guest_max_per_household?: number | null;
   allow_non_members: boolean | null;
   is_active: boolean | null;
 };
@@ -462,9 +536,12 @@ type PublicProductRow = {
   image_url: string | null;
   ticket_price: number | string;
   max_per_household: number;
+  member_max_per_household?: number | null;
+  guest_max_per_household?: number | null;
   is_active: boolean | null;
   allow_non_members: boolean | null;
-  is_available: boolean | null;
+  is_available_member: boolean | null;
+  is_available_guest: boolean | null;
 };
 
 function rowToItem(row: ProductRow): CatalogItem {
@@ -478,9 +555,11 @@ function rowToItem(row: ProductRow): CatalogItem {
       row.subsidized_item_cost == null
         ? undefined
         : toMoney(Number(row.subsidized_item_cost)),
-    totalStock: Math.max(0, Math.round(Number(row.total_stock) || 0)),
-    bookedStock: Math.max(0, Math.round(Number(row.booked_stock) || 0)),
-    maxPerHousehold: Math.max(1, Math.round(Number(row.max_per_household) || 1)),
+    memberTotalStock: Math.max(0, Math.round(Number(row.member_total_stock) || 0)),
+    memberBookedStock: Math.max(0, Math.round(Number(row.member_booked_stock) || 0)),
+    guestTotalStock: Math.max(0, Math.round(Number(row.guest_total_stock) || 0)),
+    guestBookedStock: Math.max(0, Math.round(Number(row.guest_booked_stock) || 0)),
+    ...limitsFromRow(row.max_per_household, row.member_max_per_household, row.guest_max_per_household),
     allowNonMembers: row.allow_non_members !== false,
     isActive: row.is_active !== false,
   };
@@ -494,9 +573,13 @@ function itemToRow(item: CatalogItem) {
     image_url: item.imageUrl,
     ticket_price: item.ticketPrice,
     subsidized_item_cost: item.subsidizedItemCost ?? null,
-    total_stock: item.totalStock,
-    booked_stock: item.bookedStock,
-    max_per_household: item.maxPerHousehold,
+    member_total_stock: item.memberTotalStock,
+    member_booked_stock: item.memberBookedStock,
+    guest_total_stock: item.guestTotalStock,
+    guest_booked_stock: item.guestBookedStock,
+    max_per_household: item.memberMaxPerHousehold,
+    member_max_per_household: item.memberMaxPerHousehold,
+    guest_max_per_household: item.guestMaxPerHousehold,
     allow_non_members: item.allowNonMembers !== false,
     is_active: item.isActive,
   };
@@ -509,8 +592,9 @@ function viewToPublic(row: PublicProductRow): PublicCatalogItem {
     category: row.category,
     imageUrl: row.image_url || "icon:package",
     ticketPrice: toMoney(Number(row.ticket_price)),
-    maxPerHousehold: Math.max(1, Math.round(Number(row.max_per_household) || 1)),
-    isAvailable: row.is_available === true,
+    ...limitsFromRow(row.max_per_household, row.member_max_per_household, row.guest_max_per_household),
+    isAvailableMember: row.is_available_member === true,
+    isAvailableGuest: row.is_available_guest === true,
     allowNonMembers: row.allow_non_members !== false,
   };
 }
@@ -529,11 +613,11 @@ function readLocalCatalog(cloudError: string | null = null): StoreSnapshot {
   };
 }
 
-async function readBookingOpen() {
+async function readBookingOpen(table: "public_settings_view" | "system_settings") {
   const db = getSupabase();
   if (!db) return true;
   const { data, error } = await db
-    .from("system_settings")
+    .from(table)
     .select("booking_open")
     .eq("id", 1)
     .maybeSingle();
@@ -548,8 +632,8 @@ export async function loadPublicCloud() {
   try {
     const [products, portalOpen, settings] = await Promise.all([
       db.from("public_products_view").select("*"),
-      readBookingOpen(),
-      readCloudSettings("system_settings"),
+      readBookingOpen("public_settings_view"),
+      readCloudSettings("public_settings_view"),
     ]);
     if (products.error) throw products.error;
     const publicItems = ((products.data ?? []) as PublicProductRow[])
@@ -580,7 +664,7 @@ export async function loadAdminCloud() {
         .from("products")
         .select("*")
         .order("created_at", { ascending: true }),
-      readBookingOpen(),
+      readBookingOpen("system_settings"),
       readCloudSettings("system_settings"),
     ]);
     if (products.error) throw products.error;
@@ -631,12 +715,19 @@ export async function seedCloudCatalog(): Promise<string | null> {
     return "The cloud catalog already has products.";
   }
   const saved = savedLocalItems();
-  const source = saved ?? SEED_ITEMS.map((item) => ({ ...item, bookedStock: 0 }));
+  const source =
+    saved ??
+    SEED_ITEMS.map((item) => ({
+      ...item,
+      memberBookedStock: 0,
+      guestBookedStock: 0,
+    }));
   const rows = source.map((item) =>
     itemToRow({
       ...item,
       id: PRODUCT_UUID.test(item.id) ? item.id : crypto.randomUUID(),
-      bookedStock: saved ? item.bookedStock : 0,
+      memberBookedStock: saved ? item.memberBookedStock : 0,
+      guestBookedStock: saved ? item.guestBookedStock : 0,
     }),
   );
   const inserted = await insertAdjusting("products", rows);
@@ -847,6 +938,41 @@ export function formatNaira(amount: number) {
   return `₦${toMoney(amount).toLocaleString("en-NG")}`;
 }
 
+function limitsFromRow(
+  shared: number | null | undefined,
+  member: number | null | undefined,
+  guest: number | null | undefined,
+) {
+  const sharedMax = Math.max(1, Math.round(Number(shared) || 1));
+  const memberMaxPerHousehold = Math.max(
+    1,
+    Math.round(Number(member ?? sharedMax) || sharedMax),
+  );
+  const guestMaxPerHousehold = Math.max(
+    1,
+    Math.round(Number(guest ?? sharedMax) || sharedMax),
+  );
+  return {
+    maxPerHousehold: memberMaxPerHousehold,
+    memberMaxPerHousehold,
+    guestMaxPerHousehold,
+  };
+}
+
+export function categoryBookingLimit(
+  item: {
+    maxPerHousehold: number;
+    memberMaxPerHousehold?: number;
+    guestMaxPerHousehold?: number;
+  },
+  category: HouseholdCategory,
+) {
+  if (category === "GUEST") {
+    return Math.max(1, item.guestMaxPerHousehold || item.maxPerHousehold);
+  }
+  return Math.max(1, item.memberMaxPerHousehold || item.maxPerHousehold);
+}
+
 export function quotaLabel(maxPerHousehold: number) {
   const count = Math.max(1, maxPerHousehold);
   return `Max ${count} ${count === 1 ? "Ticket" : "Tickets"} Per Family`;
@@ -858,41 +984,68 @@ export function toPublicItem(item: CatalogItem): PublicCatalogItem {
     name: item.name,
     category: item.category,
     ticketPrice: item.ticketPrice,
-    maxPerHousehold: item.maxPerHousehold,
+    maxPerHousehold: item.memberMaxPerHousehold,
+    memberMaxPerHousehold: item.memberMaxPerHousehold,
+    guestMaxPerHousehold: item.guestMaxPerHousehold,
     imageUrl: item.imageUrl,
-    isAvailable: item.totalStock - item.bookedStock > 0,
+    isAvailableMember: item.memberTotalStock - item.memberBookedStock > 0,
+    isAvailableGuest: item.guestTotalStock - item.guestBookedStock > 0,
     allowNonMembers: item.allowNonMembers !== false,
   };
 }
 
 function normalizeItem(
-  item: Omit<CatalogItem, "id" | "bookedStock"> & {
+  item: Omit<CatalogItem, "id" | "memberBookedStock" | "guestBookedStock"> & {
     id?: string;
-    bookedStock?: number;
+    memberBookedStock?: number;
+    guestBookedStock?: number;
   },
 ): CatalogItem {
-  const totalStock = Math.max(0, Math.round(item.totalStock) || 0);
+  const memberTotalStock = Math.max(0, Math.round(item.memberTotalStock) || 0);
+  const guestTotalStock = Math.max(0, Math.round(item.guestTotalStock) || 0);
   return {
     ...item,
     id: item.id ?? crypto.randomUUID(),
     name: item.name.trim() || "Untitled item",
-    bookedStock: Math.min(
-      totalStock,
-      Math.max(0, Math.round(item.bookedStock ?? 0) || 0),
+    memberBookedStock: Math.min(
+      memberTotalStock,
+      Math.max(0, Math.round(item.memberBookedStock ?? 0) || 0),
+    ),
+    guestBookedStock: Math.min(
+      guestTotalStock,
+      Math.max(0, Math.round(item.guestBookedStock ?? 0) || 0),
     ),
     ticketPrice: toMoney(item.ticketPrice),
     subsidizedItemCost:
       item.subsidizedItemCost == null
         ? undefined
         : toMoney(item.subsidizedItemCost),
-    maxPerHousehold: Math.max(1, Math.round(item.maxPerHousehold) || 1),
-    totalStock,
+    ...limitsFromRow(
+      item.maxPerHousehold,
+      item.memberMaxPerHousehold,
+      item.guestMaxPerHousehold,
+    ),
+    memberTotalStock,
+    guestTotalStock,
     allowNonMembers: item.allowNonMembers !== false,
     isActive: item.isActive !== false,
   };
 }
 
-export function useCatalog() {
+function adjustBookedStock(
+  item: CatalogItem,
+  category: HouseholdCategory,
+  delta: number,
+) {
+  if (category === "GUEST") {
+    item.guestBookedStock = Math.max(0, item.guestBookedStock + delta);
+    return;
+  }
+  item.memberBookedStock = Math.max(0, item.memberBookedStock + delta);
+}
+
+export function useCatalog(options?: { loadCloud?: boolean }) {
+  const loadCloud = options?.loadCloud === true;
   const current = useSyncExternalStore(
     subscribe,
     getSnapshot,
@@ -900,8 +1053,8 @@ export function useCatalog() {
   );
 
   useEffect(() => {
-    if (current.configured) void loadAdminCloud();
-  }, [current.configured]);
+    if (loadCloud && current.configured) void loadAdminCloud();
+  }, [current.configured, loadCloud]);
 
   function commit(updater: (catalog: CatalogState) => CatalogState) {
     commitCatalog(updater(getSnapshot().catalog));
@@ -921,7 +1074,7 @@ export function useCatalog() {
         void persistPortalOpen(portalOpen).catch(rememberCloudError);
       }
     },
-    addItem(item: Omit<CatalogItem, "id" | "bookedStock">) {
+    addItem(item: Omit<CatalogItem, "id" | "memberBookedStock" | "guestBookedStock">) {
       const nextItem = normalizeItem(item);
       commit((catalog) => ({
         ...catalog,
@@ -1648,6 +1801,17 @@ function csvCell(value: string | number) {
   return text;
 }
 
+function isPlainPhone(text: string) {
+  return /^\+?\d[\d\s()-]*$/.test(text.trim()) && text.trim() === text;
+}
+
+function safeCsvCell(value: string | number) {
+  const raw = String(value ?? "");
+  const guarded =
+    !isPlainPhone(raw) && /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return csvCell(guarded);
+}
+
 export function bookingsCsv(households: HouseholdBooking[]) {
   const headers = [
     "Reference",
@@ -1682,6 +1846,65 @@ export function bookingsCsv(households: HouseholdBooking[]) {
     .join("\r\n");
 }
 
+function shortBookingStatus(status: HouseholdStatus) {
+  switch (status) {
+    case "PENDING_VERIFICATION":
+      return "Pending";
+    case "ACCREDITED":
+      return "Accredited";
+    case "PAID_ISSUED":
+      return "Paid";
+    case "EXPIRED":
+      return "Expired";
+    case "REJECTED":
+      return "Rejected";
+  }
+}
+
+function readableCreatedAt(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-NG", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function compactBookingsCsv(households: HouseholdBooking[]) {
+  const headers = [
+    "Booking Code",
+    "Full Name",
+    "Phone / WhatsApp",
+    "Category",
+    "Items Summary",
+    "Total Amount",
+    "Status",
+    "Batch / Created At",
+  ];
+  const rows = households.map((booking) => {
+    const items = booking.items
+      .map((line) => `${line.quantity}× ${line.productName}`)
+      .join(", ");
+    return [
+      booking.referenceCode,
+      booking.fullName,
+      booking.whatsappNumber,
+      booking.category === "MEMBER" ? "Member" : "Guest",
+      items || "No items",
+      formatNaira(booking.totalTicketFee),
+      shortBookingStatus(booking.status),
+      `${booking.pickupBatch || "No batch"} / ${readableCreatedAt(booking.createdAt)}`,
+    ];
+  });
+  const body = [headers, ...rows]
+    .map((row) => row.map((cell) => safeCsvCell(cell)).join(","))
+    .join("\r\n");
+  return `\uFEFF${body}`;
+}
+
 export function rejectOrExpireHousehold(
   bookingId: string,
   newStatus: "REJECTED" | "EXPIRED",
@@ -1695,7 +1918,7 @@ export function rejectOrExpireHousehold(
   for (const line of existing.items) {
     const item = catalog.items.find((entry) => entry.id === line.productId);
     if (!item) continue;
-    item.bookedStock = Math.max(0, item.bookedStock - line.quantity);
+    adjustBookedStock(item, existing.category, -line.quantity);
     changed.push({ ...item });
   }
   const next = sanitizeHousehold({
@@ -1764,7 +1987,7 @@ export function releaseAllExpiredBookings() {
     for (const line of booking.items) {
       const item = catalog.items.find((entry) => entry.id === line.productId);
       if (!item) continue;
-      item.bookedStock = Math.max(0, item.bookedStock - line.quantity);
+      adjustBookedStock(item, booking.category, -line.quantity);
       changed.set(item.id, { ...item });
     }
   }
@@ -2005,8 +2228,14 @@ export function verifyHouseholdGate(draft: Omit<HouseholdDraft, "items">):
 
 export async function submitHouseholdBooking(
   draft: HouseholdDraft,
-  options: { elderlyAssist: boolean },
+  options: { elderlyAssist: boolean; turnstileToken?: string | null },
 ): Promise<{ ok: true; booking: HouseholdBooking } | { ok: false; error: BookingProblem }> {
+  if (!options.turnstileToken?.trim()) {
+    return {
+      ok: false,
+      error: problem("FORM", "Complete the security check before you submit."),
+    };
+  }
   getSnapshot();
   const checked = validateProfile(draft);
   if (!checked.ok) return checked;
@@ -2096,11 +2325,12 @@ export async function submitHouseholdBooking(
           error: problem("STOCK", "One of the chosen items is no longer on the portal."),
         };
       }
-      soldOut = !item.isAvailable;
+      soldOut =
+        draft.category === "GUEST" ? !item.isAvailableGuest : !item.isAvailableMember;
       lineItem = {
         id: item.id,
         name: item.name,
-        maxPerHousehold: item.maxPerHousehold,
+        maxPerHousehold: categoryBookingLimit(item, draft.category),
         allowNonMembers: item.allowNonMembers,
         ticketPrice: item.ticketPrice,
       };
@@ -2112,11 +2342,15 @@ export async function submitHouseholdBooking(
           error: problem("STOCK", "One of the chosen items is no longer on the portal."),
         };
       }
-      soldOut = quantity > item.totalStock - item.bookedStock;
+      const remaining =
+        draft.category === "GUEST"
+          ? item.guestTotalStock - item.guestBookedStock
+          : item.memberTotalStock - item.memberBookedStock;
+      soldOut = quantity > remaining;
       lineItem = {
         id: item.id,
         name: item.name,
-        maxPerHousehold: item.maxPerHousehold,
+        maxPerHousehold: categoryBookingLimit(item, draft.category),
         allowNonMembers: item.allowNonMembers !== false,
         ticketPrice: item.ticketPrice,
       };
@@ -2220,16 +2454,16 @@ export async function submitHouseholdBooking(
   if (getSnapshot().mode === "supabase") {
     const db = getSupabase();
     if (db) {
-      await db
-        .from("households")
-        .update({ verification_hash: booking.verificationHash })
-        .eq("id", booking.id);
+      await db.rpc("set_household_verification_hash", {
+        p_household_id: booking.id,
+        p_hash: booking.verificationHash,
+      });
     }
   }
   if (getSnapshot().mode !== "supabase") {
     for (const line of lines) {
       const item = catalog.items.find((entry) => entry.id === line.productId);
-      if (item) item.bookedStock += line.quantity;
+      if (item) adjustBookedStock(item, booking.category, line.quantity);
     }
   }
 

@@ -1,9 +1,11 @@
 "use client";
 
+import { Turnstile } from "@marsidev/react-turnstile";
 import { FormEvent, useState, type ReactNode } from "react";
 import { BookingSlip } from "@/components/BookingSlip";
 import { ItemVisual } from "@/components/ItemVisual";
 import {
+  categoryBookingLimit,
   formatNaira,
   markWhatsappInitiated,
   quotaLabel,
@@ -72,13 +74,20 @@ function OpenCatalog({
   const [pending, setPending] = useState(false);
   const [done, setDone] = useState<HouseholdBooking | null>(null);
   const [returning, setReturning] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
+  const householdCategory = profile?.category ?? category;
   const bookable = items.filter(
-    (item) => profile?.category !== "GUEST" || item.allowNonMembers,
+    (item) => householdCategory !== "GUEST" || item.allowNonMembers,
   );
   const selected = bookable.flatMap((item) => {
-    const quantity = Math.min(quantities[item.id] ?? 0, item.maxPerHousehold);
-    if (!item.isAvailable || quantity < 1) return [];
+    const quantity = Math.min(
+      quantities[item.id] ?? 0,
+      categoryBookingLimit(item, householdCategory),
+    );
+    const available =
+      householdCategory === "GUEST" ? item.isAvailableGuest : item.isAvailableMember;
+    if (!available || quantity < 1) return [];
     return [{ item, quantity }];
   });
   const ticketCount = selected.reduce((sum, row) => sum + row.quantity, 0);
@@ -101,6 +110,7 @@ function OpenCatalog({
 
   function onVerify(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!turnstileToken) return;
     setError(null);
     const result = verifyHouseholdGate({
       fullName,
@@ -144,7 +154,7 @@ function OpenCatalog({
           quantity: row.quantity,
         })),
       },
-      { elderlyAssist },
+      { elderlyAssist, turnstileToken },
     );
     setPending(false);
     if (!result.ok) {
@@ -311,9 +321,18 @@ function OpenCatalog({
               {error}
             </p>
           ) : null}
+          <div className="mt-6">
+            <Turnstile
+              siteKey={TURNSTILE_SITE_KEY}
+              onSuccess={setTurnstileToken}
+              onExpire={() => setTurnstileToken(null)}
+              onError={() => setTurnstileToken(null)}
+            />
+          </div>
           <button
             type="submit"
-            className="mt-6 inline-flex min-h-14 w-full items-center justify-center rounded-lg bg-emerald px-5 text-lg font-bold text-white"
+            disabled={!turnstileToken}
+            className="mt-6 inline-flex min-h-14 w-full items-center justify-center rounded-lg bg-emerald px-5 text-lg font-bold text-white disabled:bg-slate-400"
           >
             Verify Household &amp; Proceed to Ticket Booking →
           </button>
@@ -357,15 +376,22 @@ function OpenCatalog({
             <ul className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {items.map((item) => {
                 const locked = profile.category === "GUEST" && !item.allowNonMembers;
+                const available =
+                  profile.category === "GUEST"
+                    ? item.isAvailableGuest
+                    : item.isAvailableMember;
+                const bookingLimit = categoryBookingLimit(item, profile.category);
                 return (
                   <ItemCard
                     key={item.id}
                     item={item}
+                    available={available}
                     locked={locked}
+                    bookingLimit={bookingLimit}
                     quantity={
                       locked
                         ? 0
-                        : Math.min(quantities[item.id] ?? 0, item.maxPerHousehold)
+                        : Math.min(quantities[item.id] ?? 0, bookingLimit)
                     }
                     onQuantityChange={(quantity) =>
                       setQuantities((current) => ({
@@ -503,6 +529,9 @@ function OpenCatalog({
   );
 }
 
+const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "1x00000000000000000000AA";
+
 const inputClass =
   "min-h-12 w-full rounded-lg border-2 border-navy bg-white px-3 text-lg text-navy";
 
@@ -523,17 +552,21 @@ function Field({
 
 function ItemCard({
   item,
+  available,
   quantity,
   locked,
+  bookingLimit,
   onQuantityChange,
 }: {
   item: PublicCatalogItem;
+  available: boolean;
   quantity: number;
   locked: boolean;
+  bookingLimit: number;
   onQuantityChange: (quantity: number) => void;
 }) {
   const ticketCountLabel = quantity === 1 ? "Ticket" : "Tickets";
-  const canChange = item.isAvailable && !locked;
+  const canChange = available && !locked;
 
   return (
     <li className="flex flex-col rounded-2xl border-2 border-navy/15 bg-white p-5 shadow-sm">
@@ -550,15 +583,15 @@ function ItemCard({
       <div className="mt-4 flex flex-wrap gap-2">
         <span
           className={
-            item.isAvailable
+            available
               ? "inline-flex min-h-10 items-center rounded-full bg-emerald px-4 text-base font-bold text-white"
               : "inline-flex min-h-10 items-center rounded-full bg-slate-700 px-4 text-base font-bold text-white"
           }
         >
-          {item.isAvailable ? "Available to Book" : "Fully Booked"}
+          {available ? "Available to Book" : "Fully Booked"}
         </span>
         <span className="inline-flex min-h-10 items-center rounded-full border-2 border-navy bg-white px-4 text-base font-bold text-navy">
-          {quotaLabel(item.maxPerHousehold)}
+          {quotaLabel(bookingLimit)}
         </span>
         {locked ? (
           <span className="inline-flex min-h-10 items-center rounded-full bg-slate-700 px-4 text-base font-bold text-white">
@@ -584,9 +617,9 @@ function ItemCard({
           <button
             type="button"
             aria-label={`More tickets for ${item.name}`}
-            disabled={!canChange || quantity >= item.maxPerHousehold}
+            disabled={!canChange || quantity >= bookingLimit}
             onClick={() =>
-              onQuantityChange(Math.min(item.maxPerHousehold, quantity + 1))
+              onQuantityChange(Math.min(bookingLimit, quantity + 1))
             }
             className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-navy text-2xl font-bold text-white disabled:bg-slate-300 disabled:text-slate-600"
           >
@@ -607,7 +640,7 @@ function ItemCard({
             </span>
           </p>
         ) : null}
-        {!item.isAvailable && !locked ? (
+        {!available && !locked ? (
           <p className="mt-3 text-base font-semibold text-navy">
             This item is fully booked.
           </p>

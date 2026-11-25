@@ -2,7 +2,7 @@
 -- Run this whole script in the Supabase SQL Editor.
 --
 -- The public site reads public_products_view and public_settings_view.
--- Those views omit total_stock, booked_stock, subsidized_item_cost,
+-- Those views omit member and guest stock counts, subsidized_item_cost,
 -- and admin_password_hash.
 --
 -- The admin screen in this milestone uses the anon key from the browser.
@@ -29,14 +29,17 @@ create table if not exists public.products (
   image_url text,
   ticket_price numeric not null check (ticket_price >= 0),
   subsidized_item_cost numeric check (subsidized_item_cost is null or subsidized_item_cost >= 0),
-  total_stock integer not null default 0 check (total_stock >= 0),
-  booked_stock integer not null default 0 check (booked_stock >= 0),
+  member_total_stock integer not null default 0 check (member_total_stock >= 0),
+  member_booked_stock integer not null default 0 check (member_booked_stock >= 0),
+  guest_total_stock integer not null default 0 check (guest_total_stock >= 0),
+  guest_booked_stock integer not null default 0 check (guest_booked_stock >= 0),
   max_per_household integer not null default 1 check (max_per_household >= 1),
   allow_non_members boolean not null default true,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (booked_stock <= total_stock)
+  check (member_booked_stock <= member_total_stock),
+  check (guest_booked_stock <= guest_total_stock)
 );
 
 drop trigger if exists products_set_updated_at on public.products;
@@ -188,7 +191,9 @@ insert into public.system_settings (id)
 values (1)
 on conflict (id) do nothing;
 
-create or replace view public.public_products_view
+drop view if exists public.public_products_view;
+
+create view public.public_products_view
 with (security_invoker = false) as
 select
   id,
@@ -199,7 +204,8 @@ select
   max_per_household,
   allow_non_members,
   is_active,
-  (total_stock - booked_stock) > 0 as is_available
+  (member_total_stock - member_booked_stock) > 0 as is_available_member,
+  (guest_total_stock - guest_booked_stock) > 0 as is_available_guest
 from public.products;
 
 create or replace view public.public_settings_view
@@ -400,8 +406,14 @@ begin
       raise exception 'Too many tickets requested for %', v_product.name;
     end if;
 
-    if v_qty > (v_product.total_stock - v_product.booked_stock) then
-      raise exception '% is fully booked', v_product.name;
+    if p_category = 'MEMBER' then
+      if v_qty > (v_product.member_total_stock - v_product.member_booked_stock) then
+        raise exception '% is fully booked', v_product.name;
+      end if;
+    else
+      if v_qty > (v_product.guest_total_stock - v_product.guest_booked_stock) then
+        raise exception '% is fully booked', v_product.name;
+      end if;
     end if;
 
     insert into public.booking_items (
@@ -420,9 +432,15 @@ begin
       'RESERVED'
     );
 
-    update public.products
-    set booked_stock = booked_stock + v_qty
-    where id = v_product.id;
+    if p_category = 'MEMBER' then
+      update public.products
+      set member_booked_stock = member_booked_stock + v_qty
+      where id = v_product.id;
+    else
+      update public.products
+      set guest_booked_stock = guest_booked_stock + v_qty
+      where id = v_product.id;
+    end if;
   end loop;
 
   return jsonb_build_object(

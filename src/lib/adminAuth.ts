@@ -1,117 +1,59 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase";
 
-const SESSION_KEY = "canaan-admin-session";
-const PASSWORD_KEY = "canaan-admin-password";
-const AUTH_EVENT = "canaan-admin-auth";
+export type AdminSessionStatus = "loading" | "anonymous" | "authenticated";
 
-export const DEFAULT_ADMIN_PASSWORD = "CanaanJubilee2026!";
+const LEGACY_SESSION_KEY = "canaan-admin-session";
+const LEGACY_PASSWORD_KEY = "canaan-admin-password";
 
-function browserPasswordOverride() {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(PASSWORD_KEY);
-}
-
-export function configuredAdminPassword() {
-  return process.env.NEXT_PUBLIC_ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
-}
-
-export function isAdminAuthenticated() {
-  if (typeof window === "undefined") return false;
-  return window.sessionStorage.getItem(SESSION_KEY) === "ok";
-}
-
-function markSession(active: boolean) {
-  if (active) window.sessionStorage.setItem(SESSION_KEY, "ok");
-  else window.sessionStorage.removeItem(SESSION_KEY);
-  window.dispatchEvent(new Event(AUTH_EVENT));
-}
-
-async function sha256(value: string) {
-  const encoded = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", encoded);
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function cloudPasswordHash() {
-  const db = getSupabase();
-  if (!db) return null;
-  const { data, error } = await db
-    .from("system_settings")
-    .select("admin_password_hash")
-    .eq("id", 1)
-    .maybeSingle();
-  if (error || !data?.admin_password_hash) return null;
-  return String(data.admin_password_hash);
-}
-
-async function passwordMatches(password: string) {
-  const override = browserPasswordOverride();
-  if (override) return password === override;
-
-  const hash = await cloudPasswordHash();
-  if (hash) return (await sha256(password)) === hash;
-
-  return password === configuredAdminPassword();
-}
-
-export async function loginAdmin(password: string) {
-  const ok = await passwordMatches(password);
-  if (ok) markSession(true);
-  return ok;
-}
-
-export function logoutAdmin() {
-  markSession(false);
-}
-
-export async function changeAdminPassword(
-  current: string,
-  next: string,
-  confirm: string,
-) {
-  if (next !== confirm) return "The new passwords do not match.";
-  if (next.trim().length < 8) return "Use at least 8 characters.";
-  if (!(await passwordMatches(current))) {
-    return "The current password is not correct.";
-  }
-
-  window.localStorage.setItem(PASSWORD_KEY, next);
-
-  if (isSupabaseConfigured()) {
-    const db = getSupabase();
-    if (db) {
-      const hash = await sha256(next);
-      const { error } = await db
-        .from("system_settings")
-        .update({ admin_password_hash: hash })
-        .eq("id", 1);
-      if (error) {
-        return "The password was saved on this browser, but Supabase did not store the new hash. Run the SQL script, then try again.";
-      }
-    }
-  }
-
-  return null;
-}
-
-function subscribe(onStoreChange: () => void) {
-  window.addEventListener(AUTH_EVENT, onStoreChange);
-  window.addEventListener("storage", onStoreChange);
-  return () => {
-    window.removeEventListener(AUTH_EVENT, onStoreChange);
-    window.removeEventListener("storage", onStoreChange);
-  };
+function clearLegacyPassword() {
+  window.sessionStorage.removeItem(LEGACY_SESSION_KEY);
+  window.localStorage.removeItem(LEGACY_PASSWORD_KEY);
 }
 
 export function useAdminSession() {
-  return useSyncExternalStore(
-    subscribe,
-    isAdminAuthenticated,
-    () => false,
-  );
+  const [status, setStatus] = useState<AdminSessionStatus>("loading");
+  const generation = useRef(0);
+
+  useEffect(() => {
+    const ticket = ++generation.current;
+    const db = getSupabase();
+    if (!db) {
+      setStatus("anonymous");
+      return;
+    }
+
+    clearLegacyPassword();
+    let active = true;
+
+    void db.auth.getSession().then(({ data }) => {
+      if (!active || ticket !== generation.current) return;
+      setStatus(data.session ? "authenticated" : "anonymous");
+    });
+
+    const { data: subscription } = db.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      setStatus(session ? "authenticated" : "anonymous");
+    });
+
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
+
+  async function logoutAdmin() {
+    generation.current += 1;
+    setStatus("anonymous");
+    const db = getSupabase();
+    if (db) await db.auth.signOut();
+  }
+
+  return {
+    status,
+    logoutAdmin,
+    configured: isSupabaseConfigured(),
+  };
 }
